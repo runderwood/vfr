@@ -1,0 +1,19 @@
+var POINTSZ_SCALE = 10;
+
+function pointSize(population) {
+    var sz = 1;
+    if(population > 0) {
+        sz = Math.log(population)/Math.log(10);
+        sz = Math.round(sz);
+    }
+    return sz*POINTSZ_SCALE;
+}
+
+function featureStyle(feature, defaults, global_state) {
+    var style = Object.create(defaults);
+    style.color = 0xFF0000;
+    if(feature.type == "POINT") {
+        style.size = pointSize(feature.getAttr("population"));
+    }
+    return style;
+}
