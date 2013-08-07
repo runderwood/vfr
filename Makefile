@@ -4,9 +4,9 @@ builddir=./build/
 CC=gcc
 CFLAGS=-g -std=gnu99 -Wall
 
-ras: 
+vfr: 
 	$(CC) -I. $(shell gdal-config --cflags) -I$(srcdir) \
         $(CFLAGS) \
-        -o $(builddir)vrf \
-         $(srcdir)vrf.c  \
+        -o $(builddir)vfr \
+         $(srcdir)vfr.c  \
          $(shell gdal-config --libs)
