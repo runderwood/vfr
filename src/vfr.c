@@ -29,6 +29,9 @@ static int runinform(int argc, char **argv);
 static int runversion(int argc, char **argv);
 
 static int implrender(const char *datpath, int iw, int ih, const char *outfilnm);
+static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext);
+static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
+    double pxw, double pxh);
 
 int main(int argc, char **argv) {
     g_progname = argv[0];
@@ -176,33 +179,12 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
         fprintf(stderr, "could not open %s: %s\n", datpath, CPLGetLastErrorMsg());
         return 1;
     }
-   
+
     // get max extent for all layers
-    int i, lfcount, p, ptcount;
+    int i, layercount, lfcount, gcount, g;
     long j;
-    int layercount = OGR_DS_GetLayerCount(src);
-    OGREnvelope ext = {};
-    OGREnvelope allext = {};
-    OGRLayerH layer;
-    OGRFeatureH ftr;
-    for(i=0; i<layercount; i++) {
-        layer = OGR_DS_GetLayer(src, i);
-        OGR_L_GetExtent(layer, &ext, 0);
-        if(i == 0 || ext.MinX < allext.MinX) {
-            allext.MinX = ext.MinX;
-        }
-        if(i == 0 || ext.MinY < allext.MinY) {
-            allext.MinY = ext.MinY;
-        }
-        if(i == 0 || ext.MaxX > allext.MaxX) {
-            allext.MaxX = ext.MaxX;
-        }
-        if(i == 0 || ext.MaxY > allext.MaxY) {
-            allext.MaxY = ext.MaxY;
-        }
-    }
-    printf("\textent: %0.2f, %0.2f, %0.2f, %0.2f\n", 
-        allext.MinX, allext.MinY, allext.MaxX, allext.MaxY);
+    OGREnvelope ext;
+    vfr_ds_extent(src, &ext);
 
     // get pixel-to-map unit ratio
     double pxw, pxh;
@@ -216,7 +198,6 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
     }
     pxw = (ext.MaxX - ext.MinX)/iw;
     pxh = (ext.MaxY - ext.MinY)/ih;
-    printf("pxw,pxh: %f, %f\n", pxw, pxh);
 
     // draw
     cairo_surface_t *surface;
@@ -227,6 +208,9 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
     cairo_set_source_rgb(cr, 255, 255, 255);
     cairo_fill(cr);
     OGRGeometryH geom, geom2;
+    OGRFeatureH ftr;
+    OGRLayerH layer;
+    layercount = OGR_DS_GetLayerCount(src);
     double x, y, z, pxx, pxy;
     for(i=0; i<layercount; i++) {
         layer = OGR_DS_GetLayer(src, i);
@@ -237,9 +221,8 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
             switch(OGR_G_GetGeometryType(geom)) {
                 case wkbPoint:
                     OGR_G_GetPoint(geom, 0, &x, &y, &z);
-                    pxx = (x - allext.MinX)/pxw;
-                    pxy = ((allext.MaxY- y) - allext.MinY)/pxh;
-                    printf("%f, %f -> %f, %f\n", x, y, pxx, pxy);
+                    pxx = (x - ext.MinX)/pxw;
+                    pxy = (ext.MaxY - y)/pxh;
                     cairo_arc(cr, pxx, pxy, 4, 0, 2*M_PI);
                     cairo_set_source_rgb(cr, 255, 0, 0);
                     cairo_fill_preserve(cr);
@@ -248,34 +231,7 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
                     cairo_stroke(cr);
                     break;
                 case wkbPolygon:
-                    printf("polygon!\n");
-                    geom2 = OGR_G_GetGeometryRef(geom, 0);
-                    ptcount = OGR_G_GetPointCount(geom2);
-                    for(p=0; p<ptcount; p++) {
-                        OGR_G_GetPoint(geom2, p, &x, &y, &z);
-                        pxx = (x - allext.MinX)/pxw;
-                        pxy = ((allext.MaxY- y) - allext.MinY)/pxh;
-                        if(!p) {
-                            cairo_move_to(cr, pxx, pxy);
-                        } else {
-                            cairo_line_to(cr, pxx, pxy);
-                        }
-                    }
-                    OGR_G_GetPoint(geom2, 0, &x, &y, &z);
-                    pxx = (x - allext.MinX)/pxw;
-                    pxy = ((allext.MaxY- y) - allext.MinY)/pxh;
-                    cairo_line_to(cr, pxx, pxy);
-                    if(!(p % 3)) {
-                        cairo_set_source_rgb(cr, 0, 0, 255);
-                    } else if(!(p % 2)) {
-                        cairo_set_source_rgb(cr, 255, 0, 0);
-                    } else {
-                        cairo_set_source_rgb(cr, 0, 255, 0);
-                    }
-                    cairo_fill_preserve(cr);
-                    cairo_set_source_rgb(cr, 0, 0, 0);
-                    cairo_set_line_width(cr, 2);
-                    cairo_stroke(cr);
+                    vfr_draw_polygon(cr, geom, &ext, pxw, pxh);
                     break;
                 case wkbLineString:
                     printf("linestring!\n");
@@ -284,7 +240,11 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
                     printf("ring!\n");
                     break;
                 case wkbMultiPolygon:
-                    printf("multigon!\n");
+                    gcount = OGR_G_GetGeometryCount(geom);
+                    for(g=0; g < gcount; g++) {
+                        geom2 = OGR_G_GetGeometryRef(geom, g);
+                        vfr_draw_polygon(cr, geom2, &ext, pxw, pxh);
+                    }
                     break;
                 default:
                     printf("unknown!\n");
@@ -294,5 +254,56 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
         }
     }
     cairo_surface_write_to_png(surface, outfilenm);
+    return 0;
+}
+
+static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext) {
+    int i;
+    int layercount = OGR_DS_GetLayerCount(ds);
+    OGRLayerH layer;
+    OGREnvelope lext = {};
+    for(i=0; i<layercount; i++) {
+        layer = OGR_DS_GetLayer(ds, i);
+        OGR_L_GetExtent(layer, &lext, 0);
+        if(i == 0 || lext.MinX < ext->MinX) {
+            ext->MinX = lext.MinX;
+        }
+        if(i == 0 || lext.MinY < ext->MinY) {
+            ext->MinY = lext.MinY;
+        }
+        if(i == 0 || lext.MaxX > ext->MaxX) {
+            ext->MaxX = lext.MaxX;
+        }
+        if(i == 0 || lext.MaxY > ext->MaxY) {
+            ext->MaxY = lext.MaxY;
+        }
+    }
+    return 0;
+}
+
+static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
+        double pxw, double pxh) {
+    OGRGeometryH geom2 = OGR_G_GetGeometryRef(geom, 0);
+    int p, ptcount = OGR_G_GetPointCount(geom2);
+    double x, y, z, pxx, pxy;
+    for(p=0; p<ptcount; p++) {
+        OGR_G_GetPoint(geom2, p, &x, &y, &z);
+        pxx = (x - ext->MinX)/pxw;
+        pxy = (ext->MaxY - y)/pxh;
+        if(!p) {
+            cairo_move_to(cr, pxx, pxy);
+        } else {
+            cairo_line_to(cr, pxx, pxy);
+        }
+    }
+    OGR_G_GetPoint(geom2, 0, &x, &y, &z);
+    pxx = (x - ext->MinX)/pxw;
+    pxy = (ext->MaxY - y)/pxh;
+    cairo_line_to(cr, pxx, pxy);
+    cairo_set_source_rgb(cr, .8, .8, .8);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+    cairo_set_line_width(cr, 2);
+    cairo_stroke(cr);
     return 0;
 }
