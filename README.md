@@ -1,7 +1,7 @@
-    ./build/vfr: the command line vector feature renderer
+    vfr: the command line vector feature renderer
 
     usage:
-      ./build/vfr render path [stylepath]
-      ./build/vfr inform path [stylepath]
-      ./build/vfr version
+      ./vfr render -ht INT | -w INT path
+      ./vfr inform path
+      ./vfr version
 
