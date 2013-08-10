@@ -218,6 +218,11 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
         for(j=0; j<lfcount; j++) {
             ftr = OGR_L_GetFeature(layer, j);
             geom = OGR_F_GetGeometryRef(ftr);
+            if(geom == NULL) {
+                fprintf(stderr, "skipping empty polygon w/ fid = %ld\n", 
+                    OGR_F_GetFID(ftr));
+                continue;
+            }
             switch(OGR_G_GetGeometryType(geom)) {
                 case wkbPoint:
                     OGR_G_GetPoint(geom, 0, &x, &y, &z);
