@@ -54,7 +54,7 @@ static void usage(void){
     fprintf(stderr, "%s: the command line vector feature renderer\n", g_progname);
     fprintf(stderr, "\n");
     fprintf(stderr, "usage:\n");
-    fprintf(stderr, "  %s render -ht INT | -w INT path\n", g_progname);
+    fprintf(stderr, "  %s render [-out outfile] -ht INT | -wd INT path\n", g_progname);
     fprintf(stderr, "  %s inform path\n", g_progname);
     fprintf(stderr, "  %s version\n", g_progname);
     fprintf(stderr, "\n");
