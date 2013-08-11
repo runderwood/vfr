@@ -30,6 +30,8 @@ static int runversion(int argc, char **argv);
 
 static int implrender(const char *datpath, int iw, int ih, const char *outfilnm);
 static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext);
+static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
+    double pxw, double pxh);
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxw, double pxh);
 
@@ -239,7 +241,7 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
                     vfr_draw_polygon(cr, geom, &ext, pxw, pxh);
                     break;
                 case wkbLineString:
-                    printf("linestring!\n");
+                    vfr_draw_linestring(cr, geom, &ext, pxw, pxh);
                     break;
                 case wkbLinearRing:
                     printf("ring!\n");
@@ -283,6 +285,28 @@ static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext) {
             ext->MaxY = lext.MaxY;
         }
     }
+    return 0;
+}
+
+static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
+        double pxw, double pxh) {
+    int pcount = OGR_G_GetPointCount(geom);
+    if(!pcount) return 0;
+    double x, y, z, pxx, pxy;
+    int i;
+    cairo_set_line_width(cr, 2);
+    cairo_set_source_rgb(cr, .25, .25, .25);
+    for(i = 0; i < pcount; i++) {
+        OGR_G_GetPoint(geom, i, &x, &y, &z);
+        pxx = (x - ext->MinX)/pxw;
+        pxy = (ext->MaxY - y)/pxh;
+        if(!i) {
+            cairo_move_to(cr, pxx, pxy);
+            continue;
+        }
+        cairo_line_to(cr, pxx, pxy);
+    }
+    cairo_stroke(cr);
     return 0;
 }
 
