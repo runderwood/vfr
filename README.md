@@ -5,7 +5,7 @@
       ./vfr inform path
       ./vfr version
 
-== Examples ==
+##Examples
 
-![Mollweide][https://raw.github.com/runderwood/vfr/master/out/moll.png]
+![Mollweide](https://raw.github.com/runderwood/vfr/master/out/moll.png)
 
