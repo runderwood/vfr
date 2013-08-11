@@ -1,9 +1,16 @@
+##Usage
     vfr: the command line vector feature renderer
 
     usage:
       ./vfr render [-out outfile] -ht INT | -wd INT path
       ./vfr inform path
       ./vfr version
+
+##Coming Soon
+
+- Embedded Javascript style computation. Write JS functions to compute styles
+    of any complexity.
+...
 
 ##Examples
 
