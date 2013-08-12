@@ -18,6 +18,8 @@
 
 typedef struct vfr_style_s {
     uint64_t bgcolor;
+    uint64_t fgcolor;
+    int size;
 } vfr_style_t;
 
 const char *g_progname;
@@ -28,12 +30,15 @@ static int runrender(int argc, char **argv);
 static int runinform(int argc, char **argv);
 static int runversion(int argc, char **argv);
 
-static int implrender(const char *datpath, int iw, int ih, const char *outfilnm);
+static int implrender(const char *datpath, int iw, int ih, 
+        const char *outfilenm, vfr_style_t *style);
 static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext);
+static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
+    double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
-    double pxw, double pxh);
+    double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
-    double pxw, double pxh);
+    double pxw, double pxh, vfr_style_t *style);
 
 int main(int argc, char **argv) {
     g_progname = argv[0];
@@ -72,9 +77,12 @@ static int runrender(int argc, char **argv) {
 
     char *path = NULL;
     char *outfilenm = NULL;
+    vfr_style_t style = {0};
     int iw, ih, i;
     iw = 0;
     ih = 0;
+    char *str, *end;
+    unsigned long long ullval;
     for(i=2; i<argc; i++) {
         if(!path && argv[i][0] == '-') {
             if(!strcmp(argv[i], "-ht")) {
@@ -95,6 +103,27 @@ static int runrender(int argc, char **argv) {
                     return 1;
                 }
                 outfilenm = argv[i];
+            } else if(!strcmp(argv[i], "-fg")) {
+                ullval = strtoull(argv[++i], &end, 16);
+                if(ullval == 0 && end == argv[i]) {
+                    fprintf(stderr, "no 1\n");
+                    usage();
+                    return 1;
+                } else if(ullval == ULLONG_MAX && errno) {
+                    fprintf(stderr, "no 2\n");
+                    usage();
+                    return 1;
+                } else if(*end) {
+                    fprintf(stderr, "no 3 %s\n", end);
+                    usage();
+                    return 1;
+                } else {
+                    style.fgcolor = ullval;
+                }
+            } else if(!strcmp(argv[i], "-bg")) {
+                
+            } else if(!strcmp(argv[i], "-sz")) {
+
             }
         } else if(!path) {
             path = argv[i];
@@ -112,12 +141,10 @@ static int runrender(int argc, char **argv) {
     int rv;
 
     if(outfilenm == NULL) {
-        rv = implrender(path, iw, ih, "vfr_out.png");
+        rv = implrender(path, iw, ih, "vfr_out.png", &style);
     } else {
-        rv = implrender(path, iw, ih, outfilenm);
+        rv = implrender(path, iw, ih, outfilenm, &style);
     }
-
-    vfr_style_t defaultstyle = {0};
 
     return rv;
 }
@@ -171,7 +198,8 @@ static int runversion(int argc, char **argv) {
     return 0;
 }
 
-static int implrender(const char *datpath, int iw, int ih, const char *outfilenm) {
+static int implrender(const char *datpath, int iw, int ih, 
+        const char *outfilenm, vfr_style_t *style) {
     
     // open shapefile
     OGRDataSourceH src;
@@ -227,21 +255,13 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
             }
             switch(OGR_G_GetGeometryType(geom)) {
                 case wkbPoint:
-                    OGR_G_GetPoint(geom, 0, &x, &y, &z);
-                    pxx = (x - ext.MinX)/pxw;
-                    pxy = (ext.MaxY - y)/pxh;
-                    cairo_arc(cr, pxx, pxy, 4, 0, 2*M_PI);
-                    cairo_set_source_rgb(cr, 255, 0, 0);
-                    cairo_fill_preserve(cr);
-                    cairo_set_source_rgb(cr, 0, 0, 0);
-                    cairo_set_line_width(cr, 2);
-                    cairo_stroke(cr);
+                    vfr_draw_point(cr, geom, &ext, pxw, pxh, style);
                     break;
                 case wkbPolygon:
-                    vfr_draw_polygon(cr, geom, &ext, pxw, pxh);
+                    vfr_draw_polygon(cr, geom, &ext, pxw, pxh, style);
                     break;
                 case wkbLineString:
-                    vfr_draw_linestring(cr, geom, &ext, pxw, pxh);
+                    vfr_draw_linestring(cr, geom, &ext, pxw, pxh, style);
                     break;
                 case wkbLinearRing:
                     printf("ring!\n");
@@ -250,7 +270,7 @@ static int implrender(const char *datpath, int iw, int ih, const char *outfilenm
                     gcount = OGR_G_GetGeometryCount(geom);
                     for(g=0; g < gcount; g++) {
                         geom2 = OGR_G_GetGeometryRef(geom, g);
-                        vfr_draw_polygon(cr, geom2, &ext, pxw, pxh);
+                        vfr_draw_polygon(cr, geom2, &ext, pxw, pxh, style);
                     }
                     break;
                 default:
@@ -288,8 +308,23 @@ static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext) {
     return 0;
 }
 
+static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
+        double pxw, double pxh, vfr_style_t *style) {
+    double x, y, z;
+    OGR_G_GetPoint(geom, 0, &x, &y, &z);
+    double pxx = (x - ext->MinX)/pxw;
+    double pxy = (ext->MaxY - y)/pxh;
+    cairo_arc(cr, pxx, pxy, 4, 0, 2*M_PI);
+    cairo_set_source_rgb(cr, 255, 0, 0);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_set_line_width(cr, 2);
+    cairo_stroke(cr);
+    return 0;
+}
+
 static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
-        double pxw, double pxh) {
+        double pxw, double pxh, vfr_style_t *style) {
     int pcount = OGR_G_GetPointCount(geom);
     if(!pcount) return 0;
     double x, y, z, pxx, pxy;
@@ -311,7 +346,7 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
 }
 
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
-        double pxw, double pxh) {
+        double pxw, double pxh, vfr_style_t *style) {
     OGRGeometryH geom2 = OGR_G_GetGeometryRef(geom, 0);
     int p, ptcount = OGR_G_GetPointCount(geom2);
     double x, y, z, pxx, pxy;
@@ -329,9 +364,11 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxx = (x - ext->MinX)/pxw;
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
-    cairo_set_source_rgb(cr, .8, .8, .8);
+    cairo_set_source_rgb(cr, (style->bgcolor >> 24)/255, 
+        ((style->bgcolor >> 16) & 0xff)/255, ((style->bgcolor >> 8) & 0xff)/255);
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+    cairo_set_source_rgb(cr, (style->fgcolor >> 24)/255, 
+        ((style->fgcolor >> 16) & 0xff)/255, ((style->fgcolor >> 8) & 0xff)/255);
     cairo_set_line_width(cr, 2);
     cairo_stroke(cr);
     return 0;
