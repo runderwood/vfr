@@ -77,12 +77,13 @@ static int runrender(int argc, char **argv) {
 
     char *path = NULL;
     char *outfilenm = NULL;
-    vfr_style_t style = {0};
+    vfr_style_t style = {0xffffff,0x000000,3};
     int iw, ih, i;
     iw = 0;
     ih = 0;
     char *str, *end;
     unsigned long long ullval;
+    int ival;
     for(i=2; i<argc; i++) {
         if(!path && argv[i][0] == '-') {
             if(!strcmp(argv[i], "-ht")) {
@@ -106,24 +107,37 @@ static int runrender(int argc, char **argv) {
             } else if(!strcmp(argv[i], "-fg")) {
                 ullval = strtoull(argv[++i], &end, 16);
                 if(ullval == 0 && end == argv[i]) {
-                    fprintf(stderr, "no 1\n");
                     usage();
                     return 1;
                 } else if(ullval == ULLONG_MAX && errno) {
-                    fprintf(stderr, "no 2\n");
                     usage();
                     return 1;
                 } else if(*end) {
-                    fprintf(stderr, "no 3 %s\n", end);
                     usage();
                     return 1;
                 } else {
                     style.fgcolor = ullval;
                 }
             } else if(!strcmp(argv[i], "-bg")) {
-                
+                ullval = strtoull(argv[++i], &end, 16);
+                if(ullval == 0 && end == argv[i]) {
+                    usage();
+                    return 1;
+                } else if(ullval == ULLONG_MAX && errno) {
+                    usage();
+                    return 1;
+                } else if(*end) {
+                    usage();
+                    return 1;
+                } else {
+                    style.bgcolor = ullval;
+                }
             } else if(!strcmp(argv[i], "-sz")) {
-
+                ival = atoi(argv[++i]);
+                style.size = ival;
+            } else {
+                usage();
+                return 1;
             }
         } else if(!path) {
             path = argv[i];
@@ -273,6 +287,13 @@ static int implrender(const char *datpath, int iw, int ih,
                         vfr_draw_polygon(cr, geom2, &ext, pxw, pxh, style);
                     }
                     break;
+                case wkbMultiLineString:
+                    gcount = OGR_G_GetGeometryCount(geom);
+                    for(g=0; g < gcount; g++) {
+                        geom2 = OGR_G_GetGeometryRef(geom, g);
+                        vfr_draw_linestring(cr, geom2, &ext, pxw, pxh, style);
+                    }
+                    break;
                 default:
                     printf("unknown!\n");
                     break;
@@ -329,8 +350,9 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     if(!pcount) return 0;
     double x, y, z, pxx, pxy;
     int i;
-    cairo_set_line_width(cr, 2);
-    cairo_set_source_rgb(cr, .25, .25, .25);
+    cairo_set_line_width(cr, style->size);
+    cairo_set_source_rgb(cr, (style->fgcolor & 0xff0000)/0xff0000, 
+        (style->fgcolor & 0x00ff00)/0x00ff00, (style->fgcolor & 0x0000ff)/0x0000ff);
     for(i = 0; i < pcount; i++) {
         OGR_G_GetPoint(geom, i, &x, &y, &z);
         pxx = (x - ext->MinX)/pxw;
@@ -364,11 +386,11 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxx = (x - ext->MinX)/pxw;
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
-    cairo_set_source_rgb(cr, (style->bgcolor >> 24)/255, 
-        ((style->bgcolor >> 16) & 0xff)/255, ((style->bgcolor >> 8) & 0xff)/255);
+    cairo_set_source_rgb(cr, (style->bgcolor & 0xff0000)/0xff0000, 
+        (style->bgcolor & 0x00ff00)/0x00ff00, (style->bgcolor & 0x0000ff)/0x0000ff);
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, (style->fgcolor >> 24)/255, 
-        ((style->fgcolor >> 16) & 0xff)/255, ((style->fgcolor >> 8) & 0xff)/255);
+    cairo_set_source_rgb(cr, (style->fgcolor & 0xff0000)/0xff0000, 
+        (style->fgcolor & 0x00ff00)/0x00ff00, (style->fgcolor & 0x0000ff)/0x0000ff);
     cairo_set_line_width(cr, 2);
     cairo_stroke(cr);
     return 0;
