@@ -77,7 +77,7 @@ static int runrender(int argc, char **argv) {
 
     char *path = NULL;
     char *outfilenm = NULL;
-    vfr_style_t style = {0xffffff,0x000000,3};
+    vfr_style_t style = {0xffffff,0x000000,1};
     int iw, ih, i;
     iw = 0;
     ih = 0;
@@ -386,12 +386,14 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxx = (x - ext->MinX)/pxw;
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
-    cairo_set_source_rgb(cr, (style->bgcolor & 0xff0000)/0xff0000, 
-        (style->bgcolor & 0x00ff00)/0x00ff00, (style->bgcolor & 0x0000ff)/0x0000ff);
+    cairo_set_source_rgb(cr, ((style->bgcolor & 0xff0000) >> 16)/256.0, 
+        ((style->bgcolor & 0x00ff00) >> 8)/256.0, 
+        (style->bgcolor & 0x0000ff)/256.0);
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, (style->fgcolor & 0xff0000)/0xff0000, 
-        (style->fgcolor & 0x00ff00)/0x00ff00, (style->fgcolor & 0x0000ff)/0x0000ff);
-    cairo_set_line_width(cr, 2);
+    cairo_set_source_rgb(cr, ((style->fgcolor & 0xff0000) >> 16)/256.0, 
+        ((style->fgcolor & 0x00ff00) >> 8)/256.0, 
+        (style->fgcolor & 0x0000ff)/256.0);
+    cairo_set_line_width(cr, style->size);
     cairo_stroke(cr);
     return 0;
 }
