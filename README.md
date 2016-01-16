@@ -19,7 +19,9 @@ To build vfr, you need the following dev packages:
 
 ##Embedded Lua
 
-- Style features using embedded Lua. See ./etc/style0.lua 
+- Style features using embedded Lua. See ./etc/style0.lua  and ./etc/style1.lua
+- Default styles are drawn from a global variable named "vfr_feature_style"
+- Feature styles may also be programmatically altered using a global function called "vfrFeatureStyle" which takes one argument, a table with fields from the feature (obtain these using ogrinfo or some such tool)
 ...
 
 ##Examples

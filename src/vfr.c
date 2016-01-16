@@ -43,7 +43,8 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxw, double pxh, vfr_style_t *style);
-static int eval_feature_style(OGRFeatureH f, vfr_style_t *style);
+static int eval_feature_style(lua_State *L, OGRFeatureH f, vfr_style_t *style);
+static int synch_style_table(lua_State *L, vfr_style_t *style);
 
 int main(int argc, char **argv) {
     g_progname = argv[0];
@@ -251,66 +252,7 @@ static int implrender(const char *datpath, int iw, int ih,
         // load default style (if available)
         // this should call a fxn, something like synch_style_table(*style, lua_state)
         lua_getglobal(L, "vfr_style");
-        if(!lua_istable(L, -1)) {
-            fprintf(stderr, "vfr_style is not a valid lua table");
-        } else {
-            lua_pushstring(L, "fgcolor");
-            lua_gettable(L, -2);
-            if(lua_istable(L, -1)) {
-                lua_pushstring(L, "r");
-                lua_gettable(L, -2);
-                if(lua_isnumber(L, -1)) {
-                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                    style->fgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-                    fprintf(stderr, "set fgcolor (r) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
-                }
-                lua_pop(L, 1);
-                lua_pushstring(L, "g");
-                lua_gettable(L, -2);
-                if(lua_isnumber(L, -1)) {
-                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                    style->fgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-                    fprintf(stderr, "set fgcolor (g) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
-                }
-                lua_pop(L, 1);
-                lua_pushstring(L, "b");
-                lua_gettable(L, -2);
-                if(lua_isnumber(L, -1)) {
-                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                    style->fgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-                    fprintf(stderr, "set fgcolor (b) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
-                }
-                lua_pop(L, 2);
-            }
-            lua_pushstring(L, "bgcolor");
-            lua_gettable(L, -2);
-            if(lua_istable(L, -1)) {
-                lua_pushstring(L, "r");
-                lua_gettable(L, -2);
-                if(lua_isnumber(L, -1)) {
-                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                    style->bgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-                    fprintf(stderr, "set bgcolor (r) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
-                }
-                lua_pop(L, 1);
-                lua_pushstring(L, "g");
-                lua_gettable(L, -2);
-                if(lua_isnumber(L, -1)) {
-                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                    style->bgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-                    fprintf(stderr, "set bgcolor (g) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
-                }
-                lua_pop(L, 1);
-                lua_pushstring(L, "b");
-                lua_gettable(L, -2);
-                if(lua_isnumber(L, -1)) {
-                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                    style->bgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-                    fprintf(stderr, "set bgcolor (b) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
-                }
-                lua_pop(L, 2);
-            }
-        }
+        synch_style_table(L, style);
     }
 
     // get max extent for all layers
@@ -358,7 +300,7 @@ static int implrender(const char *datpath, int iw, int ih,
                 continue;
             }
             if(luafilenm != NULL) {
-                eval_feature_style(ftr, style);
+                eval_feature_style(L, ftr, style);
             }
             switch(OGR_G_GetGeometryType(geom)) {
                 case wkbPoint:
@@ -401,7 +343,113 @@ static int implrender(const char *datpath, int iw, int ih,
     return 0;
 }
 
-static int eval_feature_style(OGRFeatureH ftr, vfr_style_t *style) {
+static int eval_feature_style(lua_State *L, OGRFeatureH ftr, vfr_style_t *style) {
+    lua_getglobal(L, "vfrFeatureStyle");
+    if(!lua_isfunction(L, -1)) {
+        fprintf(stderr, "vfrFeatureStyle is not a lua function");
+        lua_pop(L, 1);
+        return 1;
+    }
+    lua_newtable(L);
+    int fldcount = OGR_F_GetFieldCount(ftr);
+    int i;
+    OGRFieldDefnH fdef;
+    for(i=0; i<fldcount; i++) {
+        fdef = OGR_F_GetFieldDefnRef(ftr, i);
+        fprintf(stderr, "-- setting lua feature key %s\n", OGR_Fld_GetNameRef(fdef));
+        lua_pushstring(L, OGR_Fld_GetNameRef(fdef));
+        switch(OGR_Fld_GetType(fdef)) {
+            case OFTString:
+            case OFTDate:
+            case OFTTime:
+                fprintf(stderr, "---- setting lua feature value (string) %s\n", OGR_F_GetFieldAsString(ftr, i));
+                lua_pushstring(L, OGR_F_GetFieldAsString(ftr, i));
+                break;
+            case OFTInteger:
+            case OFTReal:
+                fprintf(stderr, "---- setting lua feature value (number) %f\n", OGR_F_GetFieldAsDouble(ftr, i));
+                lua_pushnumber(L, OGR_F_GetFieldAsDouble(ftr, i));
+                break;
+            default:
+                fprintf(stderr, "-- skipping unimplemented field type (pushing nil)");
+                lua_pushnil(L);
+                break;
+        }
+        lua_settable(L, -3);
+    }
+    if(lua_pcall(L, 1, 1, 0) != 0) {
+        fprintf(stderr, "error calling vfrFeatureStyle: %s\n", lua_tostring(L, -1));
+    }
+    if(!lua_istable(L, -1)) {
+        fprintf(stderr, "vfrFeatureStyle did not return a table\n");
+        return 1;
+    }
+    synch_style_table(L, style);
+    return 0;
+}
+
+// assumes a valid style table is pushed on the lua stack
+static int synch_style_table(lua_State *L, vfr_style_t *style) {
+    if(!lua_istable(L, -1)) {
+        fprintf(stderr, "style is not a valid lua table");
+    } else {
+        lua_pushstring(L, "fgcolor");
+        lua_gettable(L, -2);
+        if(lua_istable(L, -1)) {
+            lua_pushstring(L, "r");
+            lua_gettable(L, -2);
+            if(lua_isnumber(L, -1)) {
+                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                style->fgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                fprintf(stderr, "set fgcolor (r) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
+            }
+            lua_pop(L, 1);
+            lua_pushstring(L, "g");
+            lua_gettable(L, -2);
+            if(lua_isnumber(L, -1)) {
+                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                style->fgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                fprintf(stderr, "set fgcolor (g) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
+            }
+            lua_pop(L, 1);
+            lua_pushstring(L, "b");
+            lua_gettable(L, -2);
+            if(lua_isnumber(L, -1)) {
+                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                style->fgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                fprintf(stderr, "set fgcolor (b) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
+            }
+            lua_pop(L, 2);
+        }
+        lua_pushstring(L, "bgcolor");
+        lua_gettable(L, -2);
+        if(lua_istable(L, -1)) {
+            lua_pushstring(L, "r");
+            lua_gettable(L, -2);
+            if(lua_isnumber(L, -1)) {
+                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                style->bgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                fprintf(stderr, "set bgcolor (r) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
+            }
+            lua_pop(L, 1);
+            lua_pushstring(L, "g");
+            lua_gettable(L, -2);
+            if(lua_isnumber(L, -1)) {
+                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                style->bgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                fprintf(stderr, "set bgcolor (g) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
+            }
+            lua_pop(L, 1);
+            lua_pushstring(L, "b");
+            lua_gettable(L, -2);
+            if(lua_isnumber(L, -1)) {
+                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                style->bgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                fprintf(stderr, "set bgcolor (b) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
+            }
+            lua_pop(L, 2);
+        }
+    }
     return 0;
 }
 
