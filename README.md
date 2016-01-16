@@ -31,4 +31,5 @@ To build vfr, you need the following dev packages:
 ![Spherical Mercator](https://raw.github.com/runderwood/vfr/master/out/sphmerc.png)
 ![Geographic](https://raw.github.com/runderwood/vfr/master/out/vfr_out.png)
 ![Hydrology](https://raw.github.com/runderwood/vfr/master/out/tx_res.png)
+![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co.png)
 
