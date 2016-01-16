@@ -2,14 +2,13 @@
     vfr: the command line vector feature renderer
 
     usage:
-      ./vfr render [-out outfile] -ht INT | -wd INT path
-      ./vfr inform path
+      ./vfr render [-out outfile] -ht INT | -wd INT path [-fg 0x000000] [-bg 0x000000] [-lua luafile] <source>
+      ./vfr inform <source>
       ./vfr version
 
-##Coming Soon
+##Embedded Lua
 
-- Embedded Javascript style computation. Write JS functions to compute styles
-    of any complexity.
+- Style features using embedded Lua. See ./etc/style0.lua 
 ...
 
 ##Examples
