@@ -9,6 +9,10 @@
 
 #include "cairo.h"
 
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+
 #if defined(__linux__)
 #define VFRSYSNAME "Linux"
 #else
@@ -31,7 +35,7 @@ static int runinform(int argc, char **argv);
 static int runversion(int argc, char **argv);
 
 static int implrender(const char *datpath, int iw, int ih, 
-        const char *outfilenm, vfr_style_t *style);
+        const char *outfilenm, vfr_style_t *style, const char *luafilenm);
 static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext);
 static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxw, double pxh, vfr_style_t *style);
@@ -39,6 +43,7 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxw, double pxh, vfr_style_t *style);
+static int eval_feature_style(OGRFeatureH f, vfr_style_t *style);
 
 int main(int argc, char **argv) {
     g_progname = argv[0];
@@ -61,8 +66,8 @@ static void usage(void){
     fprintf(stderr, "%s: the command line vector feature renderer\n", g_progname);
     fprintf(stderr, "\n");
     fprintf(stderr, "usage:\n");
-    fprintf(stderr, "  %s render [-out outfile] -ht INT | -wd INT path\n", g_progname);
-    fprintf(stderr, "  %s inform path\n", g_progname);
+    fprintf(stderr, "  %s render [-out outfile] -ht INT | -wd INT path dsrc\n", g_progname);
+    fprintf(stderr, "  %s inform dsrc\n", g_progname);
     fprintf(stderr, "  %s version\n", g_progname);
     fprintf(stderr, "\n");
     exit(1);
@@ -77,6 +82,7 @@ static int runrender(int argc, char **argv) {
 
     char *path = NULL;
     char *outfilenm = NULL;
+    char *luafilenm = NULL;
     vfr_style_t style = {0xffffff,0x000000,1};
     int iw, ih, i;
     iw = 0;
@@ -135,6 +141,12 @@ static int runrender(int argc, char **argv) {
             } else if(!strcmp(argv[i], "-sz")) {
                 ival = atoi(argv[++i]);
                 style.size = ival;
+            } else if(!strcmp(argv[i], "-lua")) {
+                if(++i >= argc) {
+                    usage();
+                    return 1;
+                }
+                luafilenm = argv[i];
             } else {
                 usage();
                 return 1;
@@ -155,9 +167,9 @@ static int runrender(int argc, char **argv) {
     int rv;
 
     if(outfilenm == NULL) {
-        rv = implrender(path, iw, ih, "vfr_out.png", &style);
+        rv = implrender(path, iw, ih, "vfr_out.png", &style, luafilenm);
     } else {
-        rv = implrender(path, iw, ih, outfilenm, &style);
+        rv = implrender(path, iw, ih, outfilenm, &style, luafilenm);
     }
 
     return rv;
@@ -213,7 +225,7 @@ static int runversion(int argc, char **argv) {
 }
 
 static int implrender(const char *datpath, int iw, int ih, 
-        const char *outfilenm, vfr_style_t *style) {
+        const char *outfilenm, vfr_style_t *style, const char *luafilenm) {
     
     // open shapefile
     OGRDataSourceH src;
@@ -222,6 +234,83 @@ static int implrender(const char *datpath, int iw, int ih,
     if(src == NULL) {
         fprintf(stderr, "could not open %s: %s\n", datpath, CPLGetLastErrorMsg());
         return 1;
+    }
+
+    // init lua, load luafile if available
+    lua_State *L;
+    if(luafilenm != NULL) {
+        fprintf(stderr, "opening lua file: %s\n", luafilenm);
+        L = lua_open();
+        luaL_openlibs(L);
+        if(luaL_loadfile(L, luafilenm) || lua_pcall(L, 0, 0, 0)) {
+            fprintf(stderr, "could not load luafile %s: %s\n", luafilenm, lua_tostring(L, -1));
+            lua_close(L);
+            return 1;
+        }
+
+        // load default style (if available)
+        // this should call a fxn, something like synch_style_table(*style, lua_state)
+        lua_getglobal(L, "vfr_style");
+        if(!lua_istable(L, -1)) {
+            fprintf(stderr, "vfr_style is not a valid lua table");
+        } else {
+            lua_pushstring(L, "fgcolor");
+            lua_gettable(L, -2);
+            if(lua_istable(L, -1)) {
+                lua_pushstring(L, "r");
+                lua_gettable(L, -2);
+                if(lua_isnumber(L, -1)) {
+                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                    style->fgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                    fprintf(stderr, "set fgcolor (r) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
+                }
+                lua_pop(L, 1);
+                lua_pushstring(L, "g");
+                lua_gettable(L, -2);
+                if(lua_isnumber(L, -1)) {
+                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                    style->fgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                    fprintf(stderr, "set fgcolor (g) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
+                }
+                lua_pop(L, 1);
+                lua_pushstring(L, "b");
+                lua_gettable(L, -2);
+                if(lua_isnumber(L, -1)) {
+                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                    style->fgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                    fprintf(stderr, "set fgcolor (b) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
+                }
+                lua_pop(L, 2);
+            }
+            lua_pushstring(L, "bgcolor");
+            lua_gettable(L, -2);
+            if(lua_istable(L, -1)) {
+                lua_pushstring(L, "r");
+                lua_gettable(L, -2);
+                if(lua_isnumber(L, -1)) {
+                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                    style->bgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                    fprintf(stderr, "set bgcolor (r) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
+                }
+                lua_pop(L, 1);
+                lua_pushstring(L, "g");
+                lua_gettable(L, -2);
+                if(lua_isnumber(L, -1)) {
+                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                    style->bgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                    fprintf(stderr, "set bgcolor (g) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
+                }
+                lua_pop(L, 1);
+                lua_pushstring(L, "b");
+                lua_gettable(L, -2);
+                if(lua_isnumber(L, -1)) {
+                    // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+                    style->bgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                    fprintf(stderr, "set bgcolor (b) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
+                }
+                lua_pop(L, 2);
+            }
+        }
     }
 
     // get max extent for all layers
@@ -256,6 +345,7 @@ static int implrender(const char *datpath, int iw, int ih,
     OGRLayerH layer;
     layercount = OGR_DS_GetLayerCount(src);
     double x, y, z, pxx, pxy;
+
     for(i=0; i<layercount; i++) {
         layer = OGR_DS_GetLayer(src, i);
         lfcount = OGR_L_GetFeatureCount(layer, 0);
@@ -266,6 +356,9 @@ static int implrender(const char *datpath, int iw, int ih,
                 fprintf(stderr, "skipping empty polygon w/ fid = %ld\n", 
                     OGR_F_GetFID(ftr));
                 continue;
+            }
+            if(luafilenm != NULL) {
+                eval_feature_style(ftr, style);
             }
             switch(OGR_G_GetGeometryType(geom)) {
                 case wkbPoint:
@@ -302,6 +395,13 @@ static int implrender(const char *datpath, int iw, int ih,
         }
     }
     cairo_surface_write_to_png(surface, outfilenm);
+    if(luafilenm != NULL) {
+        lua_close(L);
+    }
+    return 0;
+}
+
+static int eval_feature_style(OGRFeatureH ftr, vfr_style_t *style) {
     return 0;
 }
 
