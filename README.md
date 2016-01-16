@@ -3,6 +3,12 @@ This program renders shapefiles (and other OGR-compatible datasources) as PNG im
 can be styled programmatically using Lua. Definitely a work in progress (resumed after a year or so
 of idling).
 
+##Requirements
+To build vfr, you need the following dev packages:
+- Cairo
+- Lua-5.1
+- OGR/GDAL
+
 ##Usage
     vfr: the command line vector feature renderer
 
