@@ -1,3 +1,8 @@
+##About
+This program renders shapefiles (and other OGR-compatible datasources) as PNG images. Features
+can be styled programmatically using Lua. Definitely a work in progress (resumed after a year or so
+of idling).
+
 ##Usage
     vfr: the command line vector feature renderer
 
