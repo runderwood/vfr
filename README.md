@@ -82,7 +82,7 @@ end
 ...
 
 ##Examples
-Randomly Colored Polygons
+###Randomly Colored Polygons
 ![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
 
 ###Demographics
