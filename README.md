@@ -85,21 +85,21 @@ end
 Randomly Colored Polygons
 ![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
 
-Demographics
+###Demographics
 ![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co_decline1930.png)
 
-Mollweide
+###Mollweide
 ![Mollweide](https://raw.github.com/runderwood/vfr/master/out/moll.png)
 
-Robinson
+###Robinson
 ![Robinson](https://raw.github.com/runderwood/vfr/master/out/robinson.png)
 
-Spherical Mercator
+###Spherical Mercator
 ![Spherical Mercator](https://raw.github.com/runderwood/vfr/master/out/sphmerc.png)
 
-Geographic
+###Geographic
 ![Geographic](https://raw.github.com/runderwood/vfr/master/out/vfr_out.png)
 
-Hydrology
+###Hydrology
 ![Hydrology](https://raw.github.com/runderwood/vfr/master/out/tx_res.png)
 
