@@ -81,8 +81,8 @@ end
 ...
 
 ##Examples
-
-![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co.png)
+![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
+![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co_decline1930.png)
 ![Mollweide](https://raw.github.com/runderwood/vfr/master/out/moll.png)
 ![Robinson](https://raw.github.com/runderwood/vfr/master/out/robinson.png)
 ![Spherical Mercator](https://raw.github.com/runderwood/vfr/master/out/sphmerc.png)
