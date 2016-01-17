@@ -74,6 +74,7 @@ end
 ```
 
 ##Coming Soon
+- Variable sized point markers
 - Labels
 - Legends
 - More epimap options (bgcolor, etc.)
