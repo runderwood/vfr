@@ -221,7 +221,6 @@ static int runinform(int argc, char **argv) {
 static int runversion(int argc, char **argv) {
     printf("VFR Vector Feature Renderer version %s for %s\n",
       "0.0.0", VFRSYSNAME);
-    printf("Copyright (C) 2013 BdD Labs\n");
     return 0;
 }
 
@@ -356,22 +355,20 @@ static int eval_feature_style(lua_State *L, OGRFeatureH ftr, vfr_style_t *style)
     OGRFieldDefnH fdef;
     for(i=0; i<fldcount; i++) {
         fdef = OGR_F_GetFieldDefnRef(ftr, i);
-        fprintf(stderr, "-- setting lua feature key %s\n", OGR_Fld_GetNameRef(fdef));
         lua_pushstring(L, OGR_Fld_GetNameRef(fdef));
         switch(OGR_Fld_GetType(fdef)) {
             case OFTString:
             case OFTDate:
             case OFTTime:
-                fprintf(stderr, "---- setting lua feature value (string) %s\n", OGR_F_GetFieldAsString(ftr, i));
                 lua_pushstring(L, OGR_F_GetFieldAsString(ftr, i));
                 break;
             case OFTInteger:
             case OFTReal:
-                fprintf(stderr, "---- setting lua feature value (number) %f\n", OGR_F_GetFieldAsDouble(ftr, i));
                 lua_pushnumber(L, OGR_F_GetFieldAsDouble(ftr, i));
                 break;
             default:
-                fprintf(stderr, "-- skipping unimplemented field type (pushing nil)");
+                fprintf(stderr, "skipping unimplemented field type (pushing nil) for field named '%s'\n",
+                    OGR_Fld_GetNameRef(fdef));
                 lua_pushnil(L);
                 break;
         }
@@ -401,7 +398,6 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
                 style->fgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-                fprintf(stderr, "set fgcolor (r) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
             }
             lua_pop(L, 1);
             lua_pushstring(L, "g");
@@ -409,7 +405,6 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
                 style->fgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-                fprintf(stderr, "set fgcolor (g) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
             }
             lua_pop(L, 1);
             lua_pushstring(L, "b");
@@ -417,7 +412,6 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
                 style->fgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-                fprintf(stderr, "set fgcolor (b) to %x (%d)\n", style->fgcolor, (int)lua_tonumber(L, -1));
             }
             lua_pop(L, 2);
         }
@@ -429,7 +423,6 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
                 style->bgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-                fprintf(stderr, "set bgcolor (r) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
             }
             lua_pop(L, 1);
             lua_pushstring(L, "g");
@@ -437,7 +430,6 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
                 style->bgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-                fprintf(stderr, "set bgcolor (g) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
             }
             lua_pop(L, 1);
             lua_pushstring(L, "b");
@@ -445,7 +437,6 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
                 style->bgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-                fprintf(stderr, "set bgcolor (b) to %x (%d)\n", style->bgcolor, (int)lua_tonumber(L, -1));
             }
             lua_pop(L, 2);
         }
