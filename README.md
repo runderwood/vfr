@@ -75,7 +75,7 @@ end
 
 ##Coming Soon
 - Variable sized point markers
-- Labels
+- Labels (in progress -- see etc/style3.lua for present state...)
 - Legends
 - More epimap options (bgcolor, etc.)
 
@@ -84,6 +84,9 @@ end
 ##Examples
 ###Randomly Colored Polygons
 ![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
+
+###Labels (just beginning/in progress)
+![Labels](https://raw.github.com/runderwood/vfr/master/out/tx_label_test.png)
 
 ###Demographics
 ![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co_decline1930.png)
