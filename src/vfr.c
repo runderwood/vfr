@@ -342,6 +342,9 @@ static int implrender(const char *datpath, int iw, int ih,
             }
             OGR_F_Destroy(ftr);
         }
+        // TODO: this should not be done. needs to be reworked so label styles are retained from
+        // above loop until after feature rendering is complete. eval'ing the script twice was a
+        // late-night hack to see labels.
         for(j=0; j<lfcount; j++) {
             ftr = OGR_L_GetFeature(layer, j);
             geom = OGR_F_GetGeometryRef(ftr);
@@ -525,6 +528,24 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             style->label_field[objlen] = '\0';
         }
         lua_pop(L, 1);
+        lua_pushstring(L, "label_text");
+        lua_gettable(L, -2);
+        if(lua_isstring(L, -1)) {
+            // we need to copy this string, not juse use the pointer...
+            objlen = lua_objlen(L, -1);
+            // free old string
+            if(style->label_text != NULL) {
+                free(style->label_text);
+            }
+            style->label_text = malloc(objlen+1);
+            if(style->label_text == NULL) {
+                fprintf(stderr, "out of memory\n");
+                exit(1);
+            }
+            memcpy(style->label_text, lua_tostring(L, -1), objlen);
+            style->label_text[objlen] = '\0';
+        }
+        lua_pop(L, 1);
         lua_pushstring(L, "label_color");
         lua_gettable(L, -2);
         if(lua_istable(L, -1)) {
@@ -675,20 +696,17 @@ static int vfr_label_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, O
 
     // get centroid
     OGRGeometryH centrd = OGR_G_CreateGeometry(wkbPoint);
-    fprintf(stderr, "label feature! (label_place = %d)\n", style->label_place);
     if(OGR_G_Centroid(geom, centrd) == OGRERR_FAILURE) {
         fprintf(stderr, "could not get centroid for feature label\n");
         return 1;
     }
     OGR_G_GetPoint(centrd, 0, &x, &y, &z);
-    fprintf(stderr, "got centroid: %f, %f\n", x, y);
 
     // for now, just set fontface. in the future add this to the style
     cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, 10.0);
 
     cairo_text_extents_t textext;
-    fprintf(stderr, "set label text to '%s'\n", txt);
     cairo_text_extents(cr, txt, &textext);
     
     // center all labels for now.
