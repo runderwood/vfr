@@ -57,12 +57,12 @@ function vfrFeatureStyle(ftr)
 
     if(consec < 64) then
         fstyle.label_place = 1
-        fstyle.label_size = 20.0
+        fstyle.label_size = 30.0
         -- this is because label drawing is a hack
         -- such that the script is evaluated twice (once for
         -- features, once for labels) :(
-        fstyle.label_text = ""..(county_counter-13)
-        print("##\t"..ftr.name.."\t"..fstyle.label_text)
+        fstyle.label_text = ""..county_counter
+        print("##\t"..ftr.name.."\t"..fstyle.label_text.."\t"..ftr.pop1930.."\t"..ftr.pop2010.."\t"..((ftr.pop2010-ftr.pop1930)/ftr.pop1930))
         county_counter = county_counter + 1
         if consec > 160 then
             fstyle.label_color.r = 255.0 - consec
