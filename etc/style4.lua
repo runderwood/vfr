@@ -77,7 +77,7 @@ function vfrFeatureStyle(ftr)
             fstyle.label_color.g = 255
             fstyle.label_color.b = 255
         end
-        print(consec..", "..fstyle.label_color.r)
+        -- print(consec..", "..fstyle.label_color.r)
     end
 
     fstyle.bgcolor.r = consec

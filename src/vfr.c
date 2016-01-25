@@ -692,13 +692,11 @@ static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom
         return NULL;
     }
     
-    fprintf(stderr, "copy txt: %s\n", txt);
     lstyle->text = malloc(strlen(txt)+1);
     if(lstyle->text == NULL) {
         fprintf(stderr, "out of memory\n");
         return NULL;
     }
-    fprintf(stderr, "copy txt: %s\n", txt);
     memcpy(lstyle->text, txt, strlen(txt));
     lstyle->text[strlen(txt)] = '\0';
 
@@ -712,7 +710,7 @@ static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom
 
     lstyle->size = style->label_size;
     // for now, just set fontface. in the future add this to the style
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(cr, lstyle->size);
 
     cairo_text_extents_t textext;
@@ -730,7 +728,7 @@ static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom
 }
 
 static int vfr_draw_label(cairo_t *cr, vfr_label_style_t *lstyle) {
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(cr, lstyle->size);
     cairo_set_source_rgb(cr, 
         ((lstyle->color & 0xff0000) >> 16)/256.0, 
