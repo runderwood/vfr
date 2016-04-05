@@ -74,8 +74,10 @@ end
 ```
 
 ##Coming Soon
-- Variable sized point markers
-- Labels (in progress -- see etc/style3.lua for present state...)
+- Layers
+- Font options
+- SVG (and more) output options
+- Interpolation and other spatial tools (in lua)
 - Legends
 - More epimap options (bgcolor, etc.)
 
