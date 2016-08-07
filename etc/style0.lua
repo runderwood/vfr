@@ -1,10 +1,10 @@
 vfr_style = {
-    fgcolor = {
+    stroke = {
         r = 255,
         g = 255,
         b = 0
     },
-    bgcolor = {
+    fill = {
         r = 0,
         g = 0,
         b = 255

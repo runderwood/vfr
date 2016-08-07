@@ -1,10 +1,10 @@
 vfr_style = {
-    fgcolor = {
+    stroke = {
         r = 127,
         g = 127,
         b = 127
     },
-    bgcolor = {
+    fill = {
         r = 255,
         g = 255,
         b = 255
@@ -14,12 +14,12 @@ vfr_style = {
 
 function vfrFeatureStyle(ftr)
     fstyle = {
-        fgcolor = {
+        stroke = {
             r = 0,
             g = 0,
             b = 0
         },
-        bgcolor = {
+        fill = {
             r = 255,
             g = 255,
             b = 255 
@@ -27,7 +27,7 @@ function vfrFeatureStyle(ftr)
         size = 1,
         label_place = 1,
         label_text = "hello",
-        label_color = { r=255, g=0, b=255 },
+        label_fill = { r=255, g=0, b=255 },
         label_size = 8
     }
 

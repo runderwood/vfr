@@ -19,43 +19,53 @@
 #define VFRSYSNAME "Unknown"
 #endif
 
-typedef enum {VFRLABEL_NONE, VFRLABEL_AUTO, VFRLABEL_CENTER, VFRLABEL_POINT,
-    VFRLABEL_LINE, VFR_LABEL} vfr_label_place_t;
+#define VFRLABEL_CENTER 0x00000001 // center (varies)
+#define VFRLABEL_OFFSET 0x00000002 // offset plcmt (line)
+#define VFRLABEL_TANGNT 0x00000004 // tangential plcmt (line)
+#define VFRLABEL_HORIZN 0x00000008 // horizontal plcmt (line)
+#define VFRLABEL_CURVED 0x00000010 // curved plcmt (line)
+#define VFRLABEL_PERPDI 0x00000020 // perpendicular plcmt (line)
+#define VFRLABEL_PREFNW 0x00000040 // prefer northwest plcmt (point)
+#define VFRLABEL_PREFNE 0x00000080 // " northeast
+#define VFRLABEL_PREFSE 0x00000100 // " southeast
+#define VFRLABEL_PREFSW 0x00000200 // " southwest
+#define VFRLABEL_SPREAD 0x00000400 // spread to fill (poly)
+#define VFRLABEL_UPCASE 0x00000800 // text transform to uppercase
+#define VFRLABEL_OVRLAP 0x00001000 // overlap (for poly. bounds behavior, etc.)
+#define VFRLABEL_NOCROS 0x00002000 // no cross (for shorelines, etc.)
+#define VFRLABEL_FLDFIR 0x00004000 // use field first, if exists. text val sec.
+#define VFRLABEL_WRPNON 0x00008000 // nowrap
+#define VFRLABEL_WRPWRD 0x00010000 // wrap at word
+#define VFRLABEL_WRPCHR 0x00020000 // wrap at character
+#define VFRLABEL_WRPWCH 0x00040000 // wrap at word, then char (tolerance?)
 
-typedef enum {VFRORIENT_NONE, VFRORIENT_AUTO, VFRORIENT_NORTH, VFRORIENT_SOUTH,
-    VFRORIENT_EAST, VFRORIENT_WEST, VFRORIENT_NORTHEAST, VFRORIENT_SOUTHWEST,
-    VFRORIENT_NORTHWEST, VFRORIENT_SOUTHEAST} vfr_label_orient_t;
-
-typedef enum {VFRWRAP_NONE, VFRWRAP_AUTO, VFRWRAP_WORD, VFRWRAP_CHAR,
-    VFRWRAP_WORD_CHAR} vfr_label_wrap_t;
+typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLAC_POINT,
+    VFRPLACE_LINE} vfr_label_place_t;
 
 typedef struct vfr_style_s {
-    uint64_t bgcolor;
-    uint64_t fgcolor;
+    uint64_t fill;
+    uint64_t stroke;
     int size;
     vfr_label_place_t label_place;
     char *label_field;
-    uint64_t label_color;
+    uint64_t label_fill;
     char *label_text;
     double label_size;
+    uint32_t label_flags;
+    double label_xoff;
+    double label_yoff;
+    double label_halo_radius;
+    uint64_t label_halo_fill;
+    double label_rotate;
+    double width; // width for wrapping (in ems? or points?)
 } vfr_style_t;
 
 typedef struct vfr_label_style_s {
    char *text; // label text, possibly marked up
-   //vfr_label_wrap_t wrap; // wrap mode, maps to Pango wrap modes
-   //int width; // width, for wrapping, in ems
-   //uint64_t fill; // fill color, default: #000000
-   //uint64_t halo_fill; // halo fill, if halo_radius is gt 0, this color is used
-   //double halo_radius; // radius in points (?)
-   //int xoff; // custom offset, effect depends upon placement/orientation
-   //int yoff; // custom offset, effect depends upon placement/orientation
    int x; 
    int y; 
    uint64_t color; 
    double size; // size in points
-   //double rotate; // angle to rotate text
-   //vfr_label_place_t place; // placement mode
-   //vfr_label_orient_t orient; // orientation, diff. meanings for diff. settings
 } vfr_label_style_t;
 
 typedef struct vfr_list_s {
@@ -134,8 +144,8 @@ static int runrender(int argc, char **argv) {
     char *outfilenm = NULL;
     char *luafilenm = NULL;
     vfr_style_t style = {
-        0xffffff,0x000000,1, //fgcolor, bgcolor, size
-        VFRLABEL_NONE,NULL,0xffffff,NULL,25.0 // label placement, field, color, text
+        0xffffff,0x000000,1, //stroke, fill, size
+        VFRPLACE_NONE,NULL,0xffffff,NULL,25.0 // label placement, field, color, text
     };
     int iw, ih, i;
     iw = 0;
@@ -175,7 +185,7 @@ static int runrender(int argc, char **argv) {
                     usage();
                     return 1;
                 } else {
-                    style.fgcolor = ullval;
+                    style.stroke = ullval;
                 }
             } else if(!strcmp(argv[i], "-bg")) {
                 ullval = strtoull(argv[++i], &end, 16);
@@ -189,7 +199,7 @@ static int runrender(int argc, char **argv) {
                     usage();
                     return 1;
                 } else {
-                    style.bgcolor = ullval;
+                    style.fill = ullval;
                 }
             } else if(!strcmp(argv[i], "-sz")) {
                 ival = atoi(argv[++i]);
@@ -427,53 +437,53 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
     if(!lua_istable(L, -1)) {
         fprintf(stderr, "style is not a valid lua table");
     } else {
-        lua_pushstring(L, "fgcolor");
+        lua_pushstring(L, "stroke");
         lua_gettable(L, -2);
         if(lua_istable(L, -1)) {
             lua_pushstring(L, "r");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->fgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                style->stroke = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
             }
             lua_pop(L, 1);
             lua_pushstring(L, "g");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->fgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                style->stroke |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
             }
             lua_pop(L, 1);
             lua_pushstring(L, "b");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->fgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                style->stroke |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
             }
             lua_pop(L, 2);
         }
-        lua_pushstring(L, "bgcolor");
+        lua_pushstring(L, "fill");
         lua_gettable(L, -2);
         if(lua_istable(L, -1)) {
             lua_pushstring(L, "r");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->bgcolor = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                style->fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
             }
             lua_pop(L, 1);
             lua_pushstring(L, "g");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->bgcolor |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                style->fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
             }
             lua_pop(L, 1);
             lua_pushstring(L, "b");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->bgcolor |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                style->fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
             }
             lua_pop(L, 2);
         }
@@ -531,28 +541,28 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             style->label_text[objlen] = '\0';
         }
         lua_pop(L, 1);
-        lua_pushstring(L, "label_color");
+        lua_pushstring(L, "label_fill");
         lua_gettable(L, -2);
         if(lua_istable(L, -1)) {
             lua_pushstring(L, "r");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->label_color = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+                style->label_fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
             }
             lua_pop(L, 1);
             lua_pushstring(L, "g");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->label_color |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+                style->label_fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
             }
             lua_pop(L, 1);
             lua_pushstring(L, "b");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
                 // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->label_color |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+                style->label_fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
             }
             lua_pop(L, 2);
         }
@@ -680,13 +690,13 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxx = (x - ext->MinX)/pxw;
     double pxy = (ext->MaxY - y)/pxh;
     cairo_arc(cr, pxx, pxy, style->size, 0, 2*M_PI);
-    cairo_set_source_rgb(cr, ((style->bgcolor & 0xff0000) >> 16)/256.0, 
-        ((style->bgcolor & 0x00ff00) >> 8)/256.0, 
-        (style->bgcolor & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, ((style->fill & 0xff0000) >> 16)/256.0, 
+        ((style->fill & 0x00ff00) >> 8)/256.0, 
+        (style->fill & 0x0000ff)/256.0);
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, ((style->fgcolor & 0xff0000) >> 16)/256.0, 
-        ((style->fgcolor & 0x00ff00) >> 8)/256.0, 
-        (style->fgcolor & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, ((style->stroke & 0xff0000) >> 16)/256.0, 
+        ((style->stroke & 0x00ff00) >> 8)/256.0, 
+        (style->stroke & 0x0000ff)/256.0);
     cairo_set_line_width(cr, 2);
     cairo_stroke(cr);
     return 0;
@@ -699,8 +709,8 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double x, y, z, pxx, pxy;
     int i;
     cairo_set_line_width(cr, style->size);
-    cairo_set_source_rgb(cr, (style->fgcolor & 0xff0000)/0xff0000, 
-        (style->fgcolor & 0x00ff00)/0x00ff00, (style->fgcolor & 0x0000ff)/0x0000ff);
+    cairo_set_source_rgb(cr, (style->stroke & 0xff0000)/0xff0000, 
+        (style->stroke & 0x00ff00)/0x00ff00, (style->stroke & 0x0000ff)/0x0000ff);
     for(i = 0; i < pcount; i++) {
         OGR_G_GetPoint(geom, i, &x, &y, &z);
         pxx = (x - ext->MinX)/pxw;
@@ -734,13 +744,13 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxx = (x - ext->MinX)/pxw;
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
-    cairo_set_source_rgb(cr, ((style->bgcolor & 0xff0000) >> 16)/256.0, 
-        ((style->bgcolor & 0x00ff00) >> 8)/256.0, 
-        (style->bgcolor & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, ((style->fill & 0xff0000) >> 16)/256.0, 
+        ((style->fill & 0x00ff00) >> 8)/256.0, 
+        (style->fill & 0x0000ff)/256.0);
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, ((style->fgcolor & 0xff0000) >> 16)/256.0, 
-        ((style->fgcolor & 0x00ff00) >> 8)/256.0, 
-        (style->fgcolor & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, ((style->stroke & 0xff0000) >> 16)/256.0, 
+        ((style->stroke & 0x00ff00) >> 8)/256.0, 
+        (style->stroke & 0x0000ff)/256.0);
     cairo_set_line_width(cr, style->size);
     cairo_stroke(cr);
     return 0;
@@ -756,7 +766,7 @@ static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom
     vfr_label_style_t *lstyle = NULL;
 
     // if label_place set to "none", bail
-    if(style->label_place == VFRLABEL_NONE) {
+    if(style->label_place == VFRPLACE_NONE) {
         return NULL;
     }
 
@@ -806,7 +816,7 @@ static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom
     lstyle->x = pxx;
     lstyle->y = pxy;
 
-    lstyle->color = style->label_color;
+    lstyle->color = style->label_fill;
     OGR_G_DestroyGeometry(centrd);
     return lstyle;
 }
@@ -820,7 +830,7 @@ static vfr_label_style_t* vfr_label_style_point(cairo_t *cr, OGRGeometryH geom, 
     vfr_label_style_t *lstyle = NULL;
 
     // if label_place set to "none", bail
-    if(style->label_place == VFRLABEL_NONE) {
+    if(style->label_place == VFRPLACE_NONE) {
         return NULL;
     }
 
@@ -865,7 +875,7 @@ static vfr_label_style_t* vfr_label_style_point(cairo_t *cr, OGRGeometryH geom, 
     lstyle->x = pxx;
     lstyle->y = pxy;
 
-    lstyle->color = style->label_color;
+    lstyle->color = style->label_fill;
     return lstyle;
 }
 
@@ -879,7 +889,7 @@ static vfr_label_style_t* vfr_label_style_linestring(cairo_t *cr,
     int fieldidx;
 
 
-    if(style->label_place == VFRLABEL_NONE) {
+    if(style->label_place == VFRPLACE_NONE) {
         return NULL;
     }
     
@@ -929,7 +939,7 @@ static vfr_label_style_t* vfr_label_style_linestring(cairo_t *cr,
     lstyle->x = pxx;
     lstyle->y = pxy;
 
-    lstyle->color = style->label_color;
+    lstyle->color = style->label_fill;
     OGR_G_DestroyGeometry(centrd);
 
     return lstyle;

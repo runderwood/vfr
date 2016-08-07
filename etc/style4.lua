@@ -1,10 +1,10 @@
 vfr_style = {
-    fgcolor = {
+    stroke = {
         r = 127,
         g = 127,
         b = 127
     },
-    bgcolor = {
+    fill = {
         r = 255,
         g = 255,
         b = 255
@@ -19,12 +19,12 @@ county_counter = 1
 
 function vfrFeatureStyle(ftr)
     fstyle = {
-        fgcolor = {
+        stroke = {
             r = 0,
             g = 0,
             b = 0
         },
-        bgcolor = {
+        fill = {
             r = 255,
             g = 255,
             b = 255 
@@ -32,7 +32,7 @@ function vfrFeatureStyle(ftr)
         size = 1,
         label_place = 0,
         label_field = "name",
-        label_color = { r=255, g=0, b=0 }
+        label_fill = { r=255, g=0, b=0 }
     }
 
     recent = nil
@@ -65,24 +65,24 @@ function vfrFeatureStyle(ftr)
         --print(fstyle.label_text.."\t"..ftr.name.."\t"..ftr.pop1930.."\t"..ftr.pop2010.."\t"..((ftr.pop2010-ftr.pop1930)/ftr.pop1930))
         county_counter = county_counter + 1
         if consec > 160 then
-            fstyle.label_color.r = 255.0 - consec
-            fstyle.label_color.g = 255.0 - consec
-            fstyle.label_color.b = 255.0 - consec
+            fstyle.label_fill.r = 255.0 - consec
+            fstyle.label_fill.g = 255.0 - consec
+            fstyle.label_fill.b = 255.0 - consec
         elseif consec > 100 then
-            fstyle.label_color.r = 0
-            fstyle.label_color.g = 0
-            fstyle.label_color.b = 0
+            fstyle.label_fill.r = 0
+            fstyle.label_fill.g = 0
+            fstyle.label_fill.b = 0
         else
-            fstyle.label_color.r = 255
-            fstyle.label_color.g = 255
-            fstyle.label_color.b = 255
+            fstyle.label_fill.r = 255
+            fstyle.label_fill.g = 255
+            fstyle.label_fill.b = 255
         end
-        -- print(consec..", "..fstyle.label_color.r)
+        -- print(consec..", "..fstyle.label_fill.r)
     end
 
-    fstyle.bgcolor.r = consec
-    fstyle.bgcolor.g = consec
-    fstyle.bgcolor.b = consec
+    fstyle.fill.r = consec
+    fstyle.fill.g = consec
+    fstyle.fill.b = consec
 
 
     return fstyle
