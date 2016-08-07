@@ -75,7 +75,7 @@ end
 
 ##Coming Soon
 - Layers
-- Font options
+- Pango label typesetting
 - SVG (and more) output options
 - Interpolation and other spatial tools (in lua)
 - Legends
