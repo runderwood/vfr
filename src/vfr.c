@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 
 #include "ogr_api.h"
 #include "ogr_srs_api.h"
@@ -729,11 +730,12 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     fprintf(stderr, "label feature #%ld\n", OGR_F_GetFID(ftr));
 
     PangoFontDescription *fdesc;
-    PangoRectangle ink_rect, logic_rect;
     PangoLayout *plyo;
     int fieldidx;
     OGRGeometryH centroid;
-    double x, y, z, pxx, pxy;
+    OGREnvelope envelope;
+    double x, y, z, pxx, pxy, wrap_width;
+    int lyow, lyoh;
 
     cairo_set_source_rgb(cr,
             vfr_color_compextr(style->label_fill, 'r'),
@@ -763,7 +765,6 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     fprintf(stderr, "font desc set to '%s'\n", pango_font_description_to_string(pango_layout_get_font_description(plyo)));
     fprintf(stderr, "label text set to '%s'\n", pango_layout_get_text(plyo));
 
-    pango_layout_get_pixel_extents(plyo, &ink_rect, &logic_rect);
 
     // position
     switch(OGR_G_GetGeometryType(geom)) {
@@ -773,26 +774,37 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pxx += style->size/2.0;
             pxy = (ext->MaxY - y)/pxh;
             cairo_move_to(cr, pxx, pxy);
+            pango_cairo_show_layout(cr, plyo);
             break;
         default:
             centroid = OGR_G_CreateGeometry(wkbPoint);
             if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
                 fprintf(stderr, "could not get centroid\n");
             }
+
+            if(style->label_width) {
+                wrap_width = style->label_width/pxw*PANGO_SCALE;
+            } else {
+                OGR_G_GetEnvelope(geom, &envelope); 
+                wrap_width = (envelope.MaxX-envelope.MinX)/pxw*PANGO_SCALE;
+            }
+
             OGR_G_GetPoint(centroid, 0, &x, &y, &z);
             pxx = (x - ext->MinX)/pxw;
-            pxx -= logic_rect.width/2.0;
+            pxx -= (wrap_width/PANGO_SCALE)/2.0;
             pxy = (ext->MaxY - y)/pxh;
-            pxy -= logic_rect.height/2.0;
+
+            pango_layout_set_alignment(plyo, PANGO_ALIGN_CENTER);
+            pango_layout_set_width(plyo, wrap_width);
+            pango_layout_set_wrap(plyo, PANGO_WRAP_WORD_CHAR);
+            pango_layout_get_size(plyo, &lyow, &lyoh);
+            pxy -= lyoh/PANGO_SCALE/2.0;
             cairo_move_to(cr, pxx, pxy);
+            pango_cairo_show_layout(cr, plyo);
             break;
     }
-    fprintf(stderr, "labelling at %f,%f\n", pxx, pxy);
-
    
     pango_font_description_free(fdesc);
-    
-    pango_cairo_show_layout(cr, plyo);
     
     g_object_unref(plyo);
     

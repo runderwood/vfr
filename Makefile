@@ -13,6 +13,7 @@ vfr:
     $(CFLAGS) \
         -o $(builddir)vfr \
          $(srcdir)vfr.c  \
+         -lm \
          $(shell pkg-config --libs cairo pango pangocairo) \
          $(shell pkg-config --libs lua-5.1) \
          $(shell gdal-config --libs) \
