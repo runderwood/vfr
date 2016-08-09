@@ -9,6 +9,9 @@
 
 #include "cairo.h"
 
+#include <pango/pango.h>
+#include <pango/pangocairo.h>
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -39,9 +42,12 @@
 #define VFRLABEL_WRPCHR 0x00020000 // wrap at character
 #define VFRLABEL_WRPWCH 0x00040000 // wrap at word, then char (tolerance?)
 
+#define VFRDEFAULT_FONTDESC "Courier New 12"
+
 typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLAC_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
+// TODO: style dashes, hashes (patterns)
 typedef struct vfr_style_s {
     uint64_t fill;
     uint64_t stroke;
@@ -50,23 +56,15 @@ typedef struct vfr_style_s {
     char *label_field;
     uint64_t label_fill;
     char *label_text;
-    double label_size;
+    char *label_fontdesc;
     uint32_t label_flags;
     double label_xoff;
     double label_yoff;
     double label_halo_radius;
     uint64_t label_halo_fill;
     double label_rotate;
-    double width; // width for wrapping (in ems? or points?)
+    double label_width; // width for wrapping (in ems? or points?)
 } vfr_style_t;
-
-typedef struct vfr_label_style_s {
-   char *text; // label text, possibly marked up
-   int x; 
-   int y; 
-   uint64_t color; 
-   double size; // size in points
-} vfr_label_style_t;
 
 typedef struct vfr_list_s {
     void *dat;
@@ -86,24 +84,20 @@ static int implrender(const char *datpath, int iw, int ih,
         const char *outfilenm, vfr_style_t *style, const char *luafilenm);
 static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext);
 static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnvelope *ext,
-        double pxw, double pxh, vfr_style_t *style, vfr_list_t **llist);
+        double pxw, double pxh, vfr_style_t *style);
+static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnvelope *ext,
+        double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
-    double pxw, double pxh, vfr_style_t *style);
+        double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
-    double pxw, double pxh, vfr_style_t *style);
+        double pxw, double pxh, vfr_style_t *style);
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
-    double pxw, double pxh, vfr_style_t *style);
+        double pxw, double pxh, vfr_style_t *style);
 static int eval_feature_style(lua_State *L, OGRFeatureH f, vfr_style_t *style);
 static int synch_style_table(lua_State *L, vfr_style_t *style);
-static int vfr_draw_label(cairo_t *cr, vfr_label_style_t *lstyle);
-static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, OGRFeatureH ftr, 
-    double pxw, double pxh, vfr_style_t *style);
-static vfr_label_style_t* vfr_label_style_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, OGRFeatureH ftr,
-    double pxw, double pxh, vfr_style_t *style);
-static vfr_label_style_t* vfr_label_style_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, OGRFeatureH ftr,
-    double pxw, double pxh, vfr_style_t *style);
 
-static vfr_list_t* vfr_list_new(void *dat);
+static double vfr_color_compextr(uint64_t color, char c);
+// static vfr_list_t* vfr_list_new(void *dat);
 
 int main(int argc, char **argv) {
     g_progname = argv[0];
@@ -145,7 +139,7 @@ static int runrender(int argc, char **argv) {
     char *luafilenm = NULL;
     vfr_style_t style = {
         0xffffff,0x000000,1, //stroke, fill, size
-        VFRPLACE_NONE,NULL,0xffffff,NULL,25.0 // label placement, field, color, text
+        VFRPLACE_NONE,NULL,0xffffff,NULL,NULL // label placement, field, color, text
     };
     int iw, ih, i;
     iw = 0;
@@ -320,7 +314,7 @@ static int implrender(const char *datpath, int iw, int ih,
     long j;
     OGREnvelope ext;
     vfr_ds_extent(src, &ext);
-    fprintf(stderr, "got extents: max = (%f, %f), min = (%f, %f)\n", ext.MaxX, ext.MaxY, ext.MinX, ext.MaxY);
+    fprintf(stderr, "got extents: max = (%f, %f), min = (%f, %f)\n", ext.MaxX, ext.MaxY, ext.MinX, ext.MinY);
 
     // get pixel-to-map unit ratio
     double pxw, pxh;
@@ -348,8 +342,6 @@ static int implrender(const char *datpath, int iw, int ih,
     OGRLayerH layer;
     layercount = OGR_DS_GetLayerCount(src);
 
-    vfr_list_t *llist = NULL;
-    vfr_list_t *curnode = NULL;
     fprintf(stderr, "loading layers (%d)\n", layercount);
     for(i=0; i<layercount; i++) {
         layer = OGR_DS_GetLayer(src, i);
@@ -366,16 +358,9 @@ static int implrender(const char *datpath, int iw, int ih,
             if(luafilenm != NULL) {
                 eval_feature_style(L, ftr, style);
             }
-            vfr_draw_geom(cr, ftr, geom, &ext, pxw, pxh, style, &llist);
+            vfr_draw_geom(cr, ftr, geom, &ext, pxw, pxh, style);
+            vfr_draw_label(cr, ftr, geom, &ext, pxw, pxh, style);
             OGR_F_Destroy(ftr);
-        }
-        curnode = llist;
-        while(curnode->prev != NULL) {
-            curnode = curnode->prev;
-        }
-        while(curnode != NULL) {
-            vfr_draw_label(cr, (vfr_label_style_t *)(curnode->dat));
-            curnode = curnode->next;
         }
     }
     fprintf(stderr, "writing to %s\n", outfilenm);
@@ -499,10 +484,20 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             style->label_place = (int)lua_tonumber(L, -1);
         }
         lua_pop(L, 1);
-        lua_pushstring(L, "label_size");
+        lua_pushstring(L, "label_fontdesc");
         lua_gettable(L, -2);
-        if(lua_isnumber(L, -1)) {
-            style->label_size = (double)lua_tonumber(L, -1);
+        if(lua_isstring(L, -1)) {
+            objlen = lua_objlen(L, -1);
+            if(style->label_fontdesc != NULL) {
+                free(style->label_fontdesc);
+            }
+            style->label_fontdesc = malloc(objlen+1);
+            if(style->label_fontdesc == NULL) {
+                fprintf(stderr, "out of memory\n");
+                exit(1);
+            }
+            memcpy(style->label_fontdesc, lua_tostring(L, -1), objlen);
+            style->label_fontdesc[objlen] = '\0';
         }
         lua_pop(L, 1);
         lua_pushstring(L, "label_field");
@@ -595,10 +590,8 @@ static int vfr_ds_extent(OGRDataSourceH *ds, OGREnvelope *ext) {
 }
 
 static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnvelope *ext,
-        double pxw, double pxh, vfr_style_t *style, vfr_list_t **llist) {
+        double pxw, double pxh, vfr_style_t *style) {
 
-    vfr_list_t *newnode = NULL;
-    vfr_label_style_t *lstyle = NULL;
     OGRGeometryH geom2;
 
     int g, gcount;
@@ -607,47 +600,14 @@ static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnv
         case wkbPoint:
             fprintf(stderr, "rendering point\n");
             vfr_draw_point(cr, geom, ext, pxw, pxh, style);
-            lstyle = vfr_label_style_point(cr, geom, ext, ftr, pxw, pxh, style);
-            if(lstyle != NULL) {
-                newnode = vfr_list_new(lstyle);
-                if((*llist) == NULL) {
-                    *llist = newnode;
-                } else {
-                    newnode->prev = *llist;
-                    (*llist)->next = newnode;
-                    *llist = (*llist)->next;
-                }
-            }
             break;
         case wkbPolygon:
             fprintf(stderr, "rendering polygon\n");
             vfr_draw_polygon(cr, geom, ext, pxw, pxh, style);
-            lstyle = vfr_label_style_polygon(cr, geom, ext, ftr, pxw, pxh, style);
-            if(lstyle != NULL) {
-                newnode = vfr_list_new(lstyle);
-                if((*llist) == NULL) {
-                    *llist = newnode;
-                } else {
-                    newnode->prev = *llist;
-                    (*llist)->next = newnode;
-                    *llist = (*llist)->next;
-                }
-            }
             break;
         case wkbLineString:
             fprintf(stderr, "rendering linestring\n");
             vfr_draw_linestring(cr, geom, ext, pxw, pxh, style);
-            lstyle = vfr_label_style_linestring(cr, geom, ext, ftr, pxw, pxh, style);
-            if(lstyle != NULL) {
-                newnode = vfr_list_new(lstyle);
-                if((*llist) == NULL) {
-                    *llist = newnode;
-                } else {
-                    newnode->prev = *llist;
-                    (*llist)->next = newnode;
-                    *llist = (*llist)->next;
-                }
-            }
             break;
         case wkbLinearRing:
             printf("ring!\n");
@@ -672,7 +632,7 @@ static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnv
             gcount = OGR_G_GetGeometryCount(geom);
             for(g=0; g < gcount; g++) {
                 geom2 = OGR_G_GetGeometryRef(geom, g);
-                vfr_draw_geom(cr, ftr, geom2, ext, pxw, pxh, style, llist);
+                vfr_draw_geom(cr, ftr, geom2, ext, pxw, pxh, style);
             }
             break;
         default:
@@ -690,13 +650,15 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxx = (x - ext->MinX)/pxw;
     double pxy = (ext->MaxY - y)/pxh;
     cairo_arc(cr, pxx, pxy, style->size, 0, 2*M_PI);
-    cairo_set_source_rgb(cr, ((style->fill & 0xff0000) >> 16)/256.0, 
-        ((style->fill & 0x00ff00) >> 8)/256.0, 
-        (style->fill & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, 
+            vfr_color_compextr(style->fill, 'r'), 
+            vfr_color_compextr(style->fill, 'g'), 
+            vfr_color_compextr(style->fill, 'b')); 
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, ((style->stroke & 0xff0000) >> 16)/256.0, 
-        ((style->stroke & 0x00ff00) >> 8)/256.0, 
-        (style->stroke & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, 
+            vfr_color_compextr(style->stroke, 'r'),
+            vfr_color_compextr(style->stroke, 'g'),
+            vfr_color_compextr(style->stroke, 'b'));
     cairo_set_line_width(cr, 2);
     cairo_stroke(cr);
     return 0;
@@ -709,8 +671,10 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double x, y, z, pxx, pxy;
     int i;
     cairo_set_line_width(cr, style->size);
-    cairo_set_source_rgb(cr, (style->stroke & 0xff0000)/0xff0000, 
-        (style->stroke & 0x00ff00)/0x00ff00, (style->stroke & 0x0000ff)/0x0000ff);
+    cairo_set_source_rgb(cr,
+            vfr_color_compextr(style->stroke, 'r'),
+            vfr_color_compextr(style->stroke, 'g'),
+            vfr_color_compextr(style->stroke, 'b'));
     for(i = 0; i < pcount; i++) {
         OGR_G_GetPoint(geom, i, &x, &y, &z);
         pxx = (x - ext->MinX)/pxw;
@@ -744,228 +708,123 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxx = (x - ext->MinX)/pxw;
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
-    cairo_set_source_rgb(cr, ((style->fill & 0xff0000) >> 16)/256.0, 
-        ((style->fill & 0x00ff00) >> 8)/256.0, 
-        (style->fill & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, 
+            vfr_color_compextr(style->fill, 'r'), 
+            vfr_color_compextr(style->fill, 'g'), 
+            vfr_color_compextr(style->fill, 'b')); 
     cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, ((style->stroke & 0xff0000) >> 16)/256.0, 
-        ((style->stroke & 0x00ff00) >> 8)/256.0, 
-        (style->stroke & 0x0000ff)/256.0);
+    cairo_set_source_rgb(cr, 
+            vfr_color_compextr(style->stroke, 'r'), 
+            vfr_color_compextr(style->stroke, 'g'), 
+            vfr_color_compextr(style->stroke, 'b')); 
     cairo_set_line_width(cr, style->size);
     cairo_stroke(cr);
     return 0;
 }
 
-static vfr_label_style_t* vfr_label_style_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, OGRFeatureH ftr,
-    double pxw, double pxh, vfr_style_t *style) {
 
-    double x, y, z, pxx, pxy;
-    const char *txt;
+static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
+        OGREnvelope *ext, double pxw, double pxh, vfr_style_t *style) {
+
+    fprintf(stderr, "label feature #%ld\n", OGR_F_GetFID(ftr));
+
+    PangoFontDescription *fdesc;
+    PangoRectangle ink_rect, logic_rect;
+    PangoLayout *plyo;
     int fieldidx;
+    OGRGeometryH centroid;
+    double x, y, z, pxx, pxy;
 
-    vfr_label_style_t *lstyle = NULL;
+    cairo_set_source_rgb(cr,
+            vfr_color_compextr(style->label_fill, 'r'),
+            vfr_color_compextr(style->label_fill, 'g'),
+            vfr_color_compextr(style->label_fill, 'b'));
+    fprintf(stderr, "moving to %f,%f\n", (ext->MaxX-ext->MinX)/pxw/2.0, (ext->MaxY-ext->MinY)/pxh/2.0);
 
-    // if label_place set to "none", bail
-    if(style->label_place == VFRPLACE_NONE) {
-        return NULL;
-    }
-
+    // layout
+    plyo = pango_cairo_create_layout(cr);
     if(style->label_text != NULL) {
-        txt = style->label_text;
-    } else if(style->label_field != NULL) {
+        pango_layout_set_text(plyo, style->label_text, -1);
+    } else if(style->label_field) {
         fieldidx = OGR_F_GetFieldIndex(ftr, style->label_field);
         if(fieldidx < 0) {
-            fprintf(stderr, "label field '%s' not found\n", style->label_field);
-            return NULL;
+            fprintf(stderr, "invalid label field name '%s'\n", style->label_field);
+            return -1;
+        } else {
+            pango_layout_set_text(plyo, OGR_F_GetFieldAsString(ftr, fieldidx), -1);
         }
-        txt = OGR_F_GetFieldAsString(ftr, fieldidx);
+    }
+    if(style->label_fontdesc == NULL) {
+        fdesc = pango_font_description_from_string(VFRDEFAULT_FONTDESC);
     } else {
-        fprintf(stderr, "labels turned on, but no field or text specified\n");
-        return NULL;
+        fdesc = pango_font_description_from_string(style->label_fontdesc);
     }
+    pango_layout_set_font_description(plyo, fdesc);
+    fprintf(stderr, "font desc set to '%s'\n", pango_font_description_to_string(pango_layout_get_font_description(plyo)));
+    fprintf(stderr, "label text set to '%s'\n", pango_layout_get_text(plyo));
 
-    lstyle = malloc(sizeof(vfr_label_style_t));
+    pango_layout_get_pixel_extents(plyo, &ink_rect, &logic_rect);
+
+    // position
+    switch(OGR_G_GetGeometryType(geom)) {
+        case wkbPoint:
+            OGR_G_GetPoint(geom, 0, &x, &y, &z);
+            pxx = (x - ext->MinX)/pxw;
+            pxx += style->size/2.0;
+            pxy = (ext->MaxY - y)/pxh;
+            cairo_move_to(cr, pxx, pxy);
+            break;
+        default:
+            centroid = OGR_G_CreateGeometry(wkbPoint);
+            if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
+                fprintf(stderr, "could not get centroid\n");
+            }
+            OGR_G_GetPoint(centroid, 0, &x, &y, &z);
+            pxx = (x - ext->MinX)/pxw;
+            pxx -= logic_rect.width/2.0;
+            pxy = (ext->MaxY - y)/pxh;
+            pxy -= logic_rect.height/2.0;
+            cairo_move_to(cr, pxx, pxy);
+            break;
+    }
+    fprintf(stderr, "labelling at %f,%f\n", pxx, pxy);
+
+   
+    pango_font_description_free(fdesc);
     
-    lstyle->text = malloc(strlen(txt)+1);
-    if(lstyle->text == NULL) {
-        fprintf(stderr, "out of memory\n");
-        return NULL;
-    }
-    memcpy(lstyle->text, txt, strlen(txt));
-    lstyle->text[strlen(txt)] = '\0';
-
-    // get centroid
-    OGRGeometryH centrd = OGR_G_CreateGeometry(wkbPoint);
-    if(OGR_G_Centroid(geom, centrd) == OGRERR_FAILURE) {
-        fprintf(stderr, "could not get centroid for feature label\n");
-        return NULL;
-    }
-    OGR_G_GetPoint(centrd, 0, &x, &y, &z);
-
-    lstyle->size = style->label_size;
-    // for now, just set fontface. in the future add this to the style
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, lstyle->size);
-
-    cairo_text_extents_t textext;
-    cairo_text_extents(cr, txt, &textext);
+    pango_cairo_show_layout(cr, plyo);
     
-    // center all labels for now.
-    pxx = (x - ext->MinX)/pxw - textext.width/2.0;
-    pxy = (ext->MaxY - y)/pxh + textext.height/2.0;
-    lstyle->x = pxx;
-    lstyle->y = pxy;
-
-    lstyle->color = style->label_fill;
-    OGR_G_DestroyGeometry(centrd);
-    return lstyle;
-}
-
-static vfr_label_style_t* vfr_label_style_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, OGRFeatureH ftr,
-    double pxw, double pxh, vfr_style_t *style) {
-
-    double x, y, z, pxx, pxy;
-    const char *txt;
-    int fieldidx;
-    vfr_label_style_t *lstyle = NULL;
-
-    // if label_place set to "none", bail
-    if(style->label_place == VFRPLACE_NONE) {
-        return NULL;
-    }
-
-    if(style->label_text != NULL) {
-        txt = style->label_text;
-    } else if(style->label_field != NULL) {
-        fieldidx = OGR_F_GetFieldIndex(ftr, style->label_field);
-        if(fieldidx < 0) {
-            fprintf(stderr, "label field '%s' not found\n", style->label_field);
-            return NULL;
-        }
-        txt = OGR_F_GetFieldAsString(ftr, fieldidx);
-    } else {
-        fprintf(stderr, "labels turned on, but no field or text specified\n");
-        return NULL;
-    }
+    g_object_unref(plyo);
     
-   lstyle = malloc(sizeof(vfr_label_style_t));
-    
-    lstyle->text = malloc(strlen(txt)+1);
-    if(lstyle->text == NULL) {
-        fprintf(stderr, "out of memory\n");
-        return NULL;
-    }
-    memcpy(lstyle->text, txt, strlen(txt));
-    lstyle->text[strlen(txt)] = '\0';
-
-    // get xyz
-    OGR_G_GetPoint(geom, 0, &x, &y, &z);
-
-    lstyle->size = style->label_size;
-    // for now, just set fontface. in the future add this to the style
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, lstyle->size);
-
-    cairo_text_extents_t textext;
-    cairo_text_extents(cr, txt, &textext);
-    // color scaling?
-    // center all labels for now.
-    pxx = (x - ext->MinX)/pxw + textext.height;
-    pxy = (ext->MaxY - y)/pxh + textext.height;
-    lstyle->x = pxx;
-    lstyle->y = pxy;
-
-    lstyle->color = style->label_fill;
-    return lstyle;
-}
-
-static vfr_label_style_t* vfr_label_style_linestring(cairo_t *cr, 
-        OGRGeometryH geom, OGREnvelope *ext, OGRFeatureH ftr,
-        double pxw, double pxh, vfr_style_t *style) {
-
-    vfr_label_style_t *lstyle = NULL;
-    double x, y, z, pxx, pxy;
-    const char *txt;
-    int fieldidx;
-
-
-    if(style->label_place == VFRPLACE_NONE) {
-        return NULL;
-    }
-    
-    if(style->label_text != NULL) {
-        txt = style->label_text;
-    } else if(style->label_field != NULL) {
-        fieldidx = OGR_F_GetFieldIndex(ftr, style->label_field);
-        if(fieldidx < 0) {
-            fprintf(stderr, "label field '%s' not found\n", style->label_field);
-            return NULL;
-        }
-        txt = OGR_F_GetFieldAsString(ftr, fieldidx);
-    } else {
-        fprintf(stderr, "labels turned on, but no field or text specified\n");
-        return NULL;
-    }
-
-    lstyle = malloc(sizeof(vfr_label_style_t));
-
-    lstyle->text = malloc(strlen(txt)+1);
-    if(lstyle->text == NULL) {
-        fprintf(stderr, "out of memory\n");
-        return NULL;
-    }
-    memcpy(lstyle->text, txt, strlen(txt));
-    lstyle->text[strlen(txt)] = '\0';
-
-    // get centroid
-    OGRGeometryH centrd = OGR_G_CreateGeometry(wkbPoint);
-    if(OGR_G_Centroid(geom, centrd) == OGRERR_FAILURE) {
-        fprintf(stderr, "could not get centroid for feature label\n");
-        return NULL;
-    }
-    OGR_G_GetPoint(centrd, 0, &x, &y, &z);
-
-    lstyle->size = style->label_size;
-    // for now, just set fontface. in the future add this to the style
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, lstyle->size);
-
-    cairo_text_extents_t textext;
-    cairo_text_extents(cr, txt, &textext);
-    
-    // center all labels for now.
-    pxx = (x - ext->MinX)/pxw - textext.width/2.0;
-    pxy = (ext->MaxY - y)/pxh + textext.height/2.0;
-    lstyle->x = pxx;
-    lstyle->y = pxy;
-
-    lstyle->color = style->label_fill;
-    OGR_G_DestroyGeometry(centrd);
-
-    return lstyle;
-}
-
-static int vfr_draw_label(cairo_t *cr, vfr_label_style_t *lstyle) {
-    // lstyle: description, size, family, face
-    // lstyle: fill, halo_radius, halo_fill...
-    // lstyle: placement, orientation, xoff, yoff, rotate...
-    // wrapping? markup (for lua)?
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, lstyle->size);
-    cairo_set_source_rgb(cr, 
-        ((lstyle->color & 0xff0000) >> 16)/256.0, 
-        ((lstyle->color & 0x00ff00) >> 8)/256.0,
-        (lstyle->color & 0x0000ff)/256.0);
-    cairo_move_to(cr, lstyle->x, lstyle->y);
-    cairo_show_text(cr, lstyle->text);
     return 0;
 }
 
-static vfr_list_t* vfr_list_new(void *dat) {
+static double vfr_color_compextr(uint64_t color, char c) {
+
+    double comp = -1.0;
+    
+    switch(c) {
+        case 'r':
+            comp = ((color & 0xff0000) >> 16)/255.0;
+            break;
+        case 'g':
+            comp = ((color & 0x00ff00) >> 8)/255.0;
+            break;
+        case 'b':
+            comp = (color & 0x0000ff)/255.0;
+            break;
+        default:
+            break;
+    }
+
+    return comp;
+}
+
+/*static vfr_list_t* vfr_list_new(void *dat) {
     vfr_list_t *ptr = malloc(sizeof(vfr_list_t));
     if(ptr == NULL) fprintf(stderr, "out of memory\n");
     ptr->dat = dat;
     ptr->next = NULL;
     ptr->prev = NULL;
     return ptr;
-}
+}*/

@@ -34,8 +34,9 @@ function vfrFeatureStyle(ftr)
 
 
     fstyle.label_place = 0
-    fstyle.label_size = 30.0
-    fstyle.label_text = ""..county_counter
+    fstyle.label_fontdesc = "DejaVu Sans 10"
+    fstyle.label_fontdesc = "EB Garamond 14"
+    fstyle.label_field = "name"
     county_counter = county_counter + 1
     
     pctchg = ((ftr.pop2010-ftr.pop1930)/ftr.pop1930)*100.0
@@ -56,12 +57,14 @@ function vfrFeatureStyle(ftr)
 
     fill = 255 - fill
 
+    if fill > 128 then
+        fstyle.label_fill = { r=0, g=0, b=0 }
+    else
+        fstyle.label_fill = { r=255, g=255, b=255 }
+    end
+
     --fill = (1.0-math.min(((ftr.pop2010-ftr.pop1930)/ftr.pop1930), 1.0))*255.0
     --fill = math.min(255.0, fill)
-
-    print(string.format("%2d\t%s\t%d\t%d\t%2d%%\t%d",
-        fstyle.label_text, ftr.name, ftr.pop1930,
-        ftr.pop2010, pctchg, fill))
 
     fstyle.fill.r = fill
     fstyle.fill.g = fill
