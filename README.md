@@ -87,8 +87,8 @@ end
 ###Randomly Colored Polygons
 ![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
 
-###Labels (just beginning/in progress)
-![Labels](https://raw.github.com/runderwood/vfr/master/out/tx_label_test.png)
+###Labels (switch to typesetting with Pango underway)
+![Labels](https://raw.github.com/runderwood/vfr/master/out/test2.png)
 
 ###Demographics
 ![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co_decline1930.png)
