@@ -610,25 +610,22 @@ static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnv
     OGRGeometryH geom2;
 
     int g, gcount;
+    fprintf(stderr, "rendering %s\n", OGR_G_GetGeometryName(geom));
     
-    switch(OGR_G_GetGeometryType(geom)) {
+    switch(wkbFlatten(OGR_G_GetGeometryType(geom))) {
         case wkbPoint:
-            fprintf(stderr, "rendering point\n");
             vfr_draw_point(cr, geom, ext, pxw, pxh, style);
             break;
         case wkbPolygon:
-            fprintf(stderr, "rendering polygon\n");
             vfr_draw_polygon(cr, geom, ext, pxw, pxh, style);
             break;
         case wkbLineString:
-            fprintf(stderr, "rendering linestring\n");
             vfr_draw_linestring(cr, geom, ext, pxw, pxh, style);
             break;
         case wkbLinearRing:
             printf("ring!\n");
             break;
         case wkbMultiPolygon:
-            fprintf(stderr, "rendering multipolygon\n");
             gcount = OGR_G_GetGeometryCount(geom);
             for(g=0; g < gcount; g++) {
                 geom2 = OGR_G_GetGeometryRef(geom, g);
@@ -643,7 +640,6 @@ static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnv
             }
             break;
         case wkbGeometryCollection:
-            fprintf(stderr, "geomcollection\n");
             gcount = OGR_G_GetGeometryCount(geom);
             for(g=0; g < gcount; g++) {
                 geom2 = OGR_G_GetGeometryRef(geom, g);
@@ -651,7 +647,7 @@ static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnv
             }
             break;
         default:
-            printf("unknown!\n");
+            printf("unknown geometry type (%s)- ignoring!\n", OGR_G_GetGeometryName(geom));
             break;
     }
 
@@ -782,7 +778,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     pango_layout_set_font_description(plyo, fdesc);
 
     // position
-    switch(OGR_G_GetGeometryType(geom)) {
+    switch(wkbFlatten(OGR_G_GetGeometryType(geom))) {
         case wkbPoint:
             OGR_G_GetPoint(geom, 0, &x, &y, &z);
             pxx = (x - ext->MinX)/pxw;
@@ -790,6 +786,9 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pxy = (ext->MaxY - y)/pxh;
             cairo_move_to(cr, pxx, pxy);
             pango_cairo_show_layout(cr, plyo);
+            break;
+        case wkbMultiLineString:
+            fprintf(stderr, "multilinestring labelling not implemented\n");
             break;
         case wkbLineString:
             // trace line path
@@ -818,8 +817,34 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             // get middle segments as new path (.5 = midpoint)
             lblwidth = 40.0;
             lblpath = get_linear_label_path(cr, &paramd_ftrpath, lblwidth, 0.5);
-            params = parametrize_path(lblpath, &pathlen);
-            fprintf(stderr, "got lblpath, len = %f\n", pathlen);
+            if(lblpath) {
+                params = parametrize_path(lblpath, &pathlen);
+                fprintf(stderr, "got lblpath, len = %f\n", pathlen);
+            } else {
+                centroid = OGR_G_CreateGeometry(wkbPoint);
+                if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
+                    fprintf(stderr, "could not get centroid\n");
+                }
+
+                if(style->label_width) {
+                    wrap_width = style->label_width/pxw*PANGO_SCALE;
+                } else {
+                    OGR_G_GetEnvelope(geom, &envelope); 
+                    wrap_width = (envelope.MaxX-envelope.MinX)/pxw*PANGO_SCALE;
+                }
+
+                OGR_G_GetPoint(centroid, 0, &x, &y, &z);
+                pxx = (x - ext->MinX)/pxw;
+                pxx -= (wrap_width/PANGO_SCALE)/2.0;
+                pxy = (ext->MaxY - y)/pxh;
+
+                pango_layout_set_alignment(plyo, PANGO_ALIGN_CENTER);
+                pango_layout_set_width(plyo, -1);
+                pango_layout_get_size(plyo, &lyow, &lyoh);
+                pxy -= lyoh/PANGO_SCALE/2.0;
+                cairo_move_to(cr, pxx, pxy);
+                pango_cairo_show_layout(cr, plyo);
+            }
             break;
         case wkbPolygon:
         default:
@@ -935,6 +960,10 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     param_t *params;
     double plen, dx, dy, rat, stx, sty, enx, eny;
 
+    if(txtwidth > parpath->length) {
+        return NULL;
+    }
+
     src = parpath->path;
     params = parpath->params;
     plen = parpath->length*placeat;
@@ -955,7 +984,6 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     cairo_move_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dx);
     stx = curpt.point.x+rat*dx;
     sty = curpt.point.y+rat*dy;
-    fprintf(stderr, "(i) plen: %f, rat: %f\n", plen, rat);
     plen += txtwidth/2.0;
 
     // walk to end of label region
@@ -967,7 +995,6 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     }
     nxtpt = (&src->data[j])[1];
     rat = plen/params[j];
-    fprintf(stderr, "plen: %f, rat: %f\n", plen, rat);
     dx = nxtpt.point.x - curpt.point.x;
     dy = nxtpt.point.y - curpt.point.y;
 
