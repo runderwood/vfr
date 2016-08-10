@@ -110,6 +110,7 @@ static double euclid_dist(cairo_path_data_t *pt1, cairo_path_data_t *pt2);
 static param_t* parametrize_path(cairo_path_t *path, double *plen);
 static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath,
         double txtwidth, double placeat);
+static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *lblpath);
 
 static double vfr_color_compextr(uint64_t color, char c);
 // static vfr_list_t* vfr_list_new(void *dat);
@@ -744,11 +745,11 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     int i, pcount, fieldidx;
     OGRGeometryH centroid;
     OGREnvelope envelope;
-    cairo_path_t *ftrpath, *lblpath;
+    cairo_path_t *ftrpath, *lblpath, *lyopath;
     PangoLayoutLine *line;
     double x, y, z, pxx, pxy, wrap_width;
     int lyow, lyoh;
-    paramd_path_t paramd_ftrpath;
+    paramd_path_t paramd_ftrpath, paramd_lblpath;
     param_t* params;
     double pathlen, lblwidth;
 
@@ -818,9 +819,32 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pango_layout_get_size(plyo, &lyow, &lyoh);
             lblwidth = (double)lyow/PANGO_SCALE;
             lblpath = get_linear_label_path(cr, &paramd_ftrpath, lblwidth, 0.5);
+            cairo_path_destroy(ftrpath);
+            ftrpath = NULL;
+            paramd_ftrpath.path = NULL;
+            free(params);
+            paramd_ftrpath.params = NULL;
             if(lblpath) {
                 params = parametrize_path(lblpath, &pathlen);
+                paramd_lblpath.params = params;
+                paramd_lblpath.path = lblpath;
+                paramd_lblpath.length = pathlen;
                 fprintf(stderr, "got lblpath, len = %f (lblwidth = %f)\n", pathlen, lblwidth);
+                // get layout path
+                line = pango_layout_get_line_readonly(plyo, 0);
+                pxx = (&lblpath->data[0])[1].point.x;
+                pxy = (&lblpath->data[0])[1].point.y;
+                fprintf(stderr, "start at: %f, %f\n", pxx, pxy);
+                cairo_move_to(cr, pxx, pxy);
+                pango_cairo_layout_line_path(cr, line);
+                lyopath = cairo_copy_path(cr);
+                cairo_new_path(cr);
+                // put layout points on path
+                transform_label_points(lyopath, &paramd_lblpath);
+                cairo_append_path(cr, lyopath);
+                cairo_path_destroy(lyopath);
+                lyopath = NULL;
+                cairo_fill_preserve(cr);
             } else {
                 centroid = OGR_G_CreateGeometry(wkbPoint);
                 if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
@@ -1024,6 +1048,7 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     return path;
 }
 
-
-
+static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *lblpath) {
+    return;
+}
 
