@@ -67,11 +67,19 @@ typedef struct vfr_style_s {
     double label_width; // width for wrapping (in ems? or points?)
 } vfr_style_t;
 
-typedef struct vfr_list_s {
+/*typedef struct vfr_list_s {
     void *dat;
     struct vfr_list_s *next;
     struct vfr_list_s *prev;
-} vfr_list_t;
+} vfr_list_t;*/
+
+typedef double param_t;
+
+typedef struct {
+    cairo_path_t *path;
+    param_t *params;
+    double length;
+} paramd_path_t;
 
 const char *g_progname;
 
@@ -96,6 +104,12 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
         double pxw, double pxh, vfr_style_t *style);
 static int eval_feature_style(lua_State *L, OGRFeatureH f, vfr_style_t *style);
 static int synch_style_table(lua_State *L, vfr_style_t *style);
+
+
+static double euclid_dist(cairo_path_data_t *pt1, cairo_path_data_t *pt2);
+static param_t* parametrize_path(cairo_path_t *path, double *plen);
+static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath,
+        double txtwidth, double placeat);
 
 static double vfr_color_compextr(uint64_t color, char c);
 // static vfr_list_t* vfr_list_new(void *dat);
@@ -731,17 +745,21 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
 
     PangoFontDescription *fdesc;
     PangoLayout *plyo;
-    int fieldidx;
+    int i, pcount, fieldidx;
     OGRGeometryH centroid;
     OGREnvelope envelope;
+    cairo_path_t *ftrpath, *lblpath;
+    PangoLayoutLine *line;
     double x, y, z, pxx, pxy, wrap_width;
     int lyow, lyoh;
+    paramd_path_t paramd_ftrpath;
+    param_t* params;
+    double pathlen, lblwidth;
 
     cairo_set_source_rgb(cr,
             vfr_color_compextr(style->label_fill, 'r'),
             vfr_color_compextr(style->label_fill, 'g'),
             vfr_color_compextr(style->label_fill, 'b'));
-    fprintf(stderr, "moving to %f,%f\n", (ext->MaxX-ext->MinX)/pxw/2.0, (ext->MaxY-ext->MinY)/pxh/2.0);
 
     // layout
     plyo = pango_cairo_create_layout(cr);
@@ -762,9 +780,6 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
         fdesc = pango_font_description_from_string(style->label_fontdesc);
     }
     pango_layout_set_font_description(plyo, fdesc);
-    fprintf(stderr, "font desc set to '%s'\n", pango_font_description_to_string(pango_layout_get_font_description(plyo)));
-    fprintf(stderr, "label text set to '%s'\n", pango_layout_get_text(plyo));
-
 
     // position
     switch(OGR_G_GetGeometryType(geom)) {
@@ -776,6 +791,37 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             cairo_move_to(cr, pxx, pxy);
             pango_cairo_show_layout(cr, plyo);
             break;
+        case wkbLineString:
+            // trace line path
+            cairo_new_path(cr);
+            pcount = OGR_G_GetPointCount(geom);
+            if(!pcount) return 0;
+            for(i = 0; i < pcount; i++) {
+                OGR_G_GetPoint(geom, i, &x, &y, &z);
+                pxx = (x - ext->MinX)/pxw;
+                pxy = (ext->MaxY - y)/pxh;
+                if(!i) {
+                    cairo_move_to(cr, pxx, pxy);
+                    continue;
+                } else {
+                    cairo_line_to(cr, pxx, pxy);
+                }
+            }
+            // save and copy line path
+            cairo_save(cr);
+            ftrpath = cairo_copy_path_flat(cr);
+            // parametrize path
+            params = parametrize_path(ftrpath, &pathlen);
+            paramd_ftrpath.params = params;
+            paramd_ftrpath.path = ftrpath;
+            paramd_ftrpath.length = pathlen;
+            // get middle segments as new path (.5 = midpoint)
+            lblwidth = 40.0;
+            lblpath = get_linear_label_path(cr, &paramd_ftrpath, lblwidth, 0.5);
+            params = parametrize_path(lblpath, &pathlen);
+            fprintf(stderr, "got lblpath, len = %f\n", pathlen);
+            break;
+        case wkbPolygon:
         default:
             centroid = OGR_G_CreateGeometry(wkbPoint);
             if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
@@ -832,11 +878,124 @@ static double vfr_color_compextr(uint64_t color, char c) {
     return comp;
 }
 
-/*static vfr_list_t* vfr_list_new(void *dat) {
-    vfr_list_t *ptr = malloc(sizeof(vfr_list_t));
-    if(ptr == NULL) fprintf(stderr, "out of memory\n");
-    ptr->dat = dat;
-    ptr->next = NULL;
-    ptr->prev = NULL;
-    return ptr;
-}*/
+static double euclid_dist(cairo_path_data_t *pt1, cairo_path_data_t *pt2) {
+    double dx, dy;
+    dx = pt2->point.x - pt1->point.x;
+    dy = pt2->point.y - pt1->point.y;
+    return sqrt(dx*dx + dy*dy);    
+}
+
+static param_t* parametrize_path(cairo_path_t *path, double *plen) {
+    
+    int i;
+    cairo_path_data_t *pdat, lastmove, curpt;
+    param_t *params;
+
+    params = malloc(path->num_data*sizeof(param_t));
+    if(!params) {
+        fprintf(stderr, "out of memory\n");
+        exit(1);
+    }
+
+    *plen = 0.0;
+    
+    for(i=0; i < path->num_data; i += path->data[i].header.length) {
+        pdat = &path->data[i];
+        params[i] = 0.0;
+        switch(pdat->header.type) {
+            case CAIRO_PATH_MOVE_TO:
+                lastmove = pdat[1];
+                curpt = pdat[1];
+                break;
+            case CAIRO_PATH_CLOSE_PATH:
+                // close path by simulating line_to to
+                // most recent move_to
+                pdat = (&lastmove-1);
+            case CAIRO_PATH_LINE_TO:
+                params[i] = euclid_dist(&curpt, &pdat[1]);
+                *plen += params[i];
+                curpt = pdat[1];
+                break;
+            case CAIRO_PATH_CURVE_TO:
+            default:
+                fprintf(stderr, "labelling on curves not supported\n");
+                exit(1);
+                break;
+        }
+    }
+
+    return params;
+}
+
+static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, double txtwidth, double placeat) {
+
+    int i,j;
+    cairo_path_t *src, *path;
+    cairo_path_data_t curpt, nxtpt;
+    param_t *params;
+    double plen, dx, dy, rat, stx, sty, enx, eny;
+
+    src = parpath->path;
+    params = parpath->params;
+    plen = parpath->length*placeat;
+
+    cairo_save(cr);
+    cairo_new_path(cr);
+
+    // walk to beginning of label region
+    for(i=0; i<src->num_data && ((plen-params[i])>(txtwidth/2.0)); 
+            i += src->data[i].header.length) {
+        plen -= params[i];
+        curpt = (&src->data[i])[1];
+    }
+    nxtpt = (&src->data[i])[1];
+    dx = nxtpt.point.x - curpt.point.x;
+    dy = nxtpt.point.y - curpt.point.y;
+    rat = (plen-txtwidth/2.0)/params[i];
+    cairo_move_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dx);
+    stx = curpt.point.x+rat*dx;
+    sty = curpt.point.y+rat*dy;
+    fprintf(stderr, "(i) plen: %f, rat: %f\n", plen, rat);
+    plen += txtwidth/2.0;
+
+    // walk to end of label region
+    for(j=i; j<src->num_data && ((plen-params[j])>0.0);
+            j += src->data[j].header.length) {
+        plen -= params[j];
+        curpt = (&src->data[i])[1];
+        cairo_line_to(cr, curpt.point.x, curpt.point.y);
+    }
+    nxtpt = (&src->data[j])[1];
+    rat = plen/params[j];
+    fprintf(stderr, "plen: %f, rat: %f\n", plen, rat);
+    dx = nxtpt.point.x - curpt.point.x;
+    dy = nxtpt.point.y - curpt.point.y;
+
+    cairo_line_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dy);
+    enx = curpt.point.x+rat*dx;
+    eny = curpt.point.y+rat*dy;
+
+    path = cairo_copy_path_flat(cr);
+
+    // highlight label path for debug
+    cairo_set_source_rgb(cr, 0.0, 0.0, 1.0);
+    cairo_set_line_width(cr, 10.0);
+    cairo_stroke(cr);
+
+    cairo_new_path(cr);
+    cairo_set_source_rgb(cr, 0.0, 1.0, 0.0);
+    cairo_arc(cr, stx, sty, 6, 0.0, 2.0*M_PI);
+    cairo_fill(cr);
+    cairo_new_path(cr);
+    cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
+    cairo_arc(cr, enx, eny, 6, 0.0, 2.0*M_PI);
+    cairo_fill(cr);
+
+    cairo_restore(cr);
+
+    return path;
+}
+
+
+
+
