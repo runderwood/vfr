@@ -26,7 +26,7 @@ function vfrFeatureStyle(ftr)
         },
         size = 1,
         label_place = 1,
-        label_text = "hello",
+        label_text = "hello hello hello hello hello",
         label_fontdesc = "EB Garamond 24",
         label_fill = { r=255, g=0, b=255 },
         label_size = 8

@@ -815,11 +815,12 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             paramd_ftrpath.path = ftrpath;
             paramd_ftrpath.length = pathlen;
             // get middle segments as new path (.5 = midpoint)
-            lblwidth = 40.0;
+            pango_layout_get_size(plyo, &lyow, &lyoh);
+            lblwidth = (double)lyow/PANGO_SCALE;
             lblpath = get_linear_label_path(cr, &paramd_ftrpath, lblwidth, 0.5);
             if(lblpath) {
                 params = parametrize_path(lblpath, &pathlen);
-                fprintf(stderr, "got lblpath, len = %f\n", pathlen);
+                fprintf(stderr, "got lblpath, len = %f (lblwidth = %f)\n", pathlen, lblwidth);
             } else {
                 centroid = OGR_G_CreateGeometry(wkbPoint);
                 if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
@@ -981,7 +982,7 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     dx = nxtpt.point.x - curpt.point.x;
     dy = nxtpt.point.y - curpt.point.y;
     rat = (plen-txtwidth/2.0)/params[i];
-    cairo_move_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dx);
+    cairo_move_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dy);
     stx = curpt.point.x+rat*dx;
     sty = curpt.point.y+rat*dy;
     plen += txtwidth/2.0;
@@ -990,7 +991,7 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     for(j=i; j<src->num_data && ((plen-params[j])>0.0);
             j += src->data[j].header.length) {
         plen -= params[j];
-        curpt = (&src->data[i])[1];
+        curpt = (&src->data[j])[1];
         cairo_line_to(cr, curpt.point.x, curpt.point.y);
     }
     nxtpt = (&src->data[j])[1];
