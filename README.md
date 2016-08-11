@@ -84,11 +84,11 @@ end
 ...
 
 ##Examples
+###Labels (using Pango)
+![Labels](https://raw.github.com/runderwood/vfr/master/out/txcopop.png)
+
 ###Randomly Colored Polygons
 ![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
-
-###Labels (switch to typesetting with Pango underway)
-![Labels](https://raw.github.com/runderwood/vfr/master/out/test2.png)
 
 ###Demographics
 ![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co_decline1930.png)
