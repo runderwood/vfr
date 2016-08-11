@@ -110,7 +110,8 @@ static double euclid_dist(cairo_path_data_t *pt1, cairo_path_data_t *pt2);
 static param_t* parametrize_path(cairo_path_t *path, double *plen);
 static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath,
         double txtwidth, double placeat);
-static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *lblpath);
+static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *paramd_lblpath);
+static void transform_label_point(paramd_path_t *paramd_lblpath, double *xptr, double *yptr);
 
 static double vfr_color_compextr(uint64_t color, char c);
 // static vfr_list_t* vfr_list_new(void *dat);
@@ -829,22 +830,22 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                 paramd_lblpath.params = params;
                 paramd_lblpath.path = lblpath;
                 paramd_lblpath.length = pathlen;
-                fprintf(stderr, "got lblpath, len = %f (lblwidth = %f)\n", pathlen, lblwidth);
                 // get layout path
                 line = pango_layout_get_line_readonly(plyo, 0);
                 pxx = (&lblpath->data[0])[1].point.x;
                 pxy = (&lblpath->data[0])[1].point.y;
-                fprintf(stderr, "start at: %f, %f\n", pxx, pxy);
                 cairo_move_to(cr, pxx, pxy);
+                cairo_new_path(cr);
                 pango_cairo_layout_line_path(cr, line);
-                lyopath = cairo_copy_path(cr);
+                lyopath = cairo_copy_path_flat(cr);
                 cairo_new_path(cr);
                 // put layout points on path
                 transform_label_points(lyopath, &paramd_lblpath);
                 cairo_append_path(cr, lyopath);
                 cairo_path_destroy(lyopath);
                 lyopath = NULL;
-                cairo_fill_preserve(cr);
+                cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
+                cairo_fill(cr);
             } else {
                 centroid = OGR_G_CreateGeometry(wkbPoint);
                 if(OGR_G_Centroid(geom, centroid) == OGRERR_FAILURE) {
@@ -1006,9 +1007,9 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     dx = nxtpt.point.x - curpt.point.x;
     dy = nxtpt.point.y - curpt.point.y;
     rat = (plen-txtwidth/2.0)/params[i];
-    cairo_move_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dy);
     stx = curpt.point.x+rat*dx;
     sty = curpt.point.y+rat*dy;
+    cairo_move_to(cr, stx, sty);
     plen += txtwidth/2.0;
 
     // walk to end of label region
@@ -1023,32 +1024,126 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath, 
     dx = nxtpt.point.x - curpt.point.x;
     dy = nxtpt.point.y - curpt.point.y;
 
-    cairo_line_to(cr, curpt.point.x+rat*dx, curpt.point.y+rat*dy);
     enx = curpt.point.x+rat*dx;
     eny = curpt.point.y+rat*dy;
+    cairo_line_to(cr, enx, eny);
 
     path = cairo_copy_path_flat(cr);
-
-    // highlight label path for debug
-    cairo_set_source_rgb(cr, 0.0, 0.0, 1.0);
-    cairo_set_line_width(cr, 10.0);
-    cairo_stroke(cr);
-
-    cairo_new_path(cr);
-    cairo_set_source_rgb(cr, 0.0, 1.0, 0.0);
-    cairo_arc(cr, stx, sty, 6, 0.0, 2.0*M_PI);
-    cairo_fill(cr);
-    cairo_new_path(cr);
-    cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
-    cairo_arc(cr, enx, eny, 6, 0.0, 2.0*M_PI);
-    cairo_fill(cr);
 
     cairo_restore(cr);
 
     return path;
 }
 
-static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *lblpath) {
+static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *paramd_lblpath) {
+
+    cairo_path_data_t *pdat;
+    int i;
+    double *xptr, *yptr;
+
+    for(i=0; i<lyopath->num_data;
+            i+=lyopath->data[i].header.length) {
+        // walk segments...
+        pdat = &lyopath->data[i];
+        switch(pdat->header.type) {
+            case CAIRO_PATH_CURVE_TO:
+                // TODO: approximate w/ segments
+                fprintf(stderr, "curves not supported\n");
+                exit(1);
+                break;
+            case CAIRO_PATH_MOVE_TO:
+            case CAIRO_PATH_LINE_TO:
+                // transform point
+                xptr = &pdat[1].point.x;
+                yptr = &pdat[1].point.y;
+                transform_label_point(paramd_lblpath, xptr, yptr);
+                break;
+            case CAIRO_PATH_CLOSE_PATH:
+                break;
+            default:
+                fprintf(stderr, "invalid path data type\n");
+                exit(1);
+                break;
+        }
+    }
+
     return;
 }
 
+static void transform_label_point(paramd_path_t *paramd_lblpath, double *xptr, double *yptr) {
+
+    int i;
+    double rat, x=*xptr, y=*yptr, dx, dy;
+    cairo_path_data_t *pdat, lastmoveto, curpt;
+    cairo_path_t *lblpath;
+    param_t *params;
+
+    lblpath = paramd_lblpath->path;
+    params = paramd_lblpath->params;
+
+    for (i=0; i + lblpath->data[i].header.length < lblpath->num_data &&
+            (x > params[i] ||
+             lblpath->data[i].header.type == CAIRO_PATH_MOVE_TO);
+            i += lblpath->data[i].header.length) {
+        x -= params[i];
+        pdat = &lblpath->data[i];
+        switch (pdat->header.type) {
+            case CAIRO_PATH_MOVE_TO:
+                curpt = pdat[1];
+                lastmoveto = pdat[1];
+                break;
+            case CAIRO_PATH_LINE_TO:
+                curpt = pdat[1];
+                break;
+            case CAIRO_PATH_CURVE_TO:
+                curpt = pdat[3];
+                break;
+            case CAIRO_PATH_CLOSE_PATH:
+                break;
+            default:
+                fprintf(stderr, "invalid path data type\n");
+                exit(1);
+                break;
+        }
+    }
+
+    pdat = &lblpath->data[i];
+
+    switch (pdat->header.type) {
+        case CAIRO_PATH_MOVE_TO:
+            break;
+        case CAIRO_PATH_CLOSE_PATH:
+            pdat = (&lastmoveto) - 1;
+        case CAIRO_PATH_LINE_TO:
+
+            // modelled on Behdad Esfahbod's technique in cairo examples:
+            // https://github.com/phuang/pango/blob/master/examples/cairotwisted.c
+            // http://mces.blogspot.com/2008/11/text-on-path-with-cairo.html)
+            
+            rat = x/params[i];
+
+            /* Line polynomial */
+            *xptr = curpt.point.x*(1-rat)+pdat[1].point.x*rat;
+            *yptr = curpt.point.y*(1-rat)+pdat[1].point.y*rat;
+
+            /* Line gradient */
+            dx = -(curpt.point.x-pdat[1].point.x);
+            dy = -(curpt.point.y-pdat[1].point.y);
+
+            /*optimization for: ratio = the_y / sqrt (dx * dx + dy * dy);*/
+            rat = y/params[i];
+            *xptr += -dy*rat;
+            *yptr +=  dx*rat;
+            break;
+        case CAIRO_PATH_CURVE_TO:
+            fprintf(stderr, "labelling curves not supported\n");
+            exit(1);
+            break;
+        default:
+            fprintf(stderr, "invalid path data type\n");
+            exit(1);
+            break;
+    }
+
+    return;
+}
