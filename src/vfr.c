@@ -9,6 +9,7 @@
 #include "cpl_error.h"
 
 #include "cairo.h"
+#include "cairo-svg.h"
 
 #include <pango/pango.h>
 #include <pango/pangocairo.h>
@@ -349,11 +350,20 @@ static int implrender(const char *datpath, int iw, int ih,
     // draw
     cairo_surface_t *surface;
     cairo_t *cr;
-    surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, iw, ih);
+    // surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, iw, ih);
+    surface = cairo_svg_surface_create(outfilenm, iw, ih);
+    cairo_svg_surface_restrict_to_version(surface, CAIRO_SVG_VERSION_1_2);
     cr = cairo_create(surface);
-    cairo_rectangle(cr, 0, 0, iw, ih);
-    cairo_set_source_rgb(cr, 255, 255, 255);
+    // cairo_rectangle(cr, 0, 0, iw, ih);
+    // cairo_set_source_rgb(cr, 255, 255, 255);
     cairo_fill(cr);
+    // make label surface/context
+    cairo_surface_t *lsurface;
+    cairo_t *lcr;
+    cairo_rectangle_t surfext = {0.0, 0.0, iw, ih};
+    lsurface = cairo_recording_surface_create(CAIRO_CONTENT_COLOR_ALPHA, &surfext);
+    lcr = cairo_create(lsurface);
+    // geom/feature/layer variables
     OGRGeometryH geom;
     OGRFeatureH ftr;
     OGRLayerH layer;
@@ -376,12 +386,22 @@ static int implrender(const char *datpath, int iw, int ih,
                 eval_feature_style(L, ftr, style);
             }
             vfr_draw_geom(cr, ftr, geom, &ext, pxw, pxh, style);
-            vfr_draw_label(cr, ftr, geom, &ext, pxw, pxh, style);
+            vfr_draw_label(lcr, ftr, geom, &ext, pxw, pxh, style);
             OGR_F_Destroy(ftr);
         }
     }
-    fprintf(stderr, "writing to %s\n", outfilenm);
-    cairo_surface_write_to_png(surface, outfilenm);
+    fprintf(stderr, "painting labels over shapes...\n");
+    cairo_set_source_surface(cr, lsurface, 0.0, 0.0);
+    cairo_paint(cr);
+    fprintf(stderr, "written to %s\n", outfilenm);
+    // fprintf(stderr, "writing to %s\n", outfilenm);
+    // cairo_surface_write_to_png(surface, outfilenm);
+    // cairo_surface_write_to_png(lsurface, "test.png");
+    cairo_destroy(lcr);
+    cairo_surface_destroy(lsurface);
+    cairo_destroy(cr);
+    cairo_surface_flush(surface);
+    cairo_surface_destroy(surface);
     if(luafilenm != NULL) {
         lua_close(L);
     }
