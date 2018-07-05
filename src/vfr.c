@@ -46,7 +46,7 @@
 
 #define VFRDEFAULT_FONTDESC "Courier New 12"
 
-typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLAC_POINT,
+typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
 // TODO: style dashes, hashes (patterns)
@@ -419,6 +419,7 @@ static int eval_feature_style(lua_State *L, OGRFeatureH ftr, vfr_style_t *style)
     int fldcount = OGR_F_GetFieldCount(ftr);
     int i;
     OGRFieldDefnH fdef;
+    OGRFeatureDefnH ftrdef;
     for(i=0; i<fldcount; i++) {
         fdef = OGR_F_GetFieldDefnRef(ftr, i);
         lua_pushstring(L, OGR_Fld_GetNameRef(fdef));
@@ -440,6 +441,13 @@ static int eval_feature_style(lua_State *L, OGRFeatureH ftr, vfr_style_t *style)
         }
         lua_settable(L, -3);
     }
+
+    // add metadata for layer name, geom type, etc.
+    ftrdef = OGR_F_GetDefnRef(ftr);
+    lua_pushstring(L, "_vfr_layer");
+    lua_pushstring(L, OGR_FD_GetName(ftrdef));
+    lua_settable(L, -3);
+
     if(lua_pcall(L, 1, 1, 0) != 0) {
         fprintf(stderr, "error calling vfrFeatureStyle: %s\n", lua_tostring(L, -1));
     }
@@ -758,7 +766,9 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
 
 static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
         OGREnvelope *ext, double pxw, double pxh, vfr_style_t *style) {
-
+    
+    if(!style->label_place) return 0;
+    
     fprintf(stderr, "label feature #%ld\n", OGR_F_GetFID(ftr));
 
     PangoFontDescription *fdesc;
