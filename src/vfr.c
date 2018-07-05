@@ -447,6 +447,9 @@ static int eval_feature_style(lua_State *L, OGRFeatureH ftr, vfr_style_t *style)
     lua_pushstring(L, "_vfr_layer");
     lua_pushstring(L, OGR_FD_GetName(ftrdef));
     lua_settable(L, -3);
+    lua_pushstring(L, "_vfr_geomtype");
+    lua_pushstring(L, OGR_G_GetGeometryName(OGR_F_GetGeometryRef(ftr)));
+    lua_settable(L, -3);
 
     if(lua_pcall(L, 1, 1, 0) != 0) {
         fprintf(stderr, "error calling vfrFeatureStyle: %s\n", lua_tostring(L, -1));
