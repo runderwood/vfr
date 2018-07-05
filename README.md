@@ -1,9 +1,9 @@
-##About
+## About
 This program renders shapefiles (and other OGR-compatible datasources) as PNG images. Features
 can be styled programmatically using Lua. I've used it as a tool for quickly generating simple 
 maps for use in educational settings.
 
-##Requirements
+## Requirements
 To build vfr, you need the following dev packages:
 - Cairo
 - Lua-5.1
@@ -13,7 +13,7 @@ On Debian/Ubuntu you can do:
 
     apt-get install libcairo2-dev libgdal-dev liblua5.1-0-dev
 
-##Usage
+## Usage
     vfr: the command line vector feature renderer
 
     usage:
@@ -24,7 +24,7 @@ On Debian/Ubuntu you can do:
     example:
       vfr render -out mymap.png -wd 400 -lua myluafile.lua /home/johnsmith/geodata/myshapefile
 
-##Embedded Lua
+## Embedded Lua
 
 - Style features using embedded Lua. See ./etc/style0.lua  and ./etc/style1.lua
 - Default styles are drawn from a global variable named "vfr_feature_style"
@@ -73,7 +73,7 @@ function vfrFeatureStyle(ftr)
 end
 ```
 
-##Coming Soon
+## Coming Soon
 - Layers
 - Pango label typesetting
 - SVG (and more) output options
@@ -83,32 +83,32 @@ end
 
 ...
 
-##Examples
+## Examples
 
-###Multilayer with Labels (using Pango and OGR's VRT facilities)
+### Multilayer with Labels (using Pango and OGR's VRT facilities)
 ![Multilayer](https://raw.github.com/runderwood/vfr/master/out/neco-sch.svg)
 
-###Labels (using Pango)
+### Labels (using Pango)
 ![Labels](https://raw.github.com/runderwood/vfr/master/out/txcopop.png)
 
-###Randomly Colored Polygons
+### Randomly Colored Polygons
 ![Random Colors](https://raw.github.com/runderwood/vfr/master/out/tx_co_rand.png)
 
-###Demographics
+### Demographics
 ![Demographics](https://raw.github.com/runderwood/vfr/master/out/tx_co_decline1930.png)
 
-###Mollweide
+### Mollweide
 ![Mollweide](https://raw.github.com/runderwood/vfr/master/out/moll.png)
 
-###Robinson
+### Robinson
 ![Robinson](https://raw.github.com/runderwood/vfr/master/out/robinson.png)
 
-###Spherical Mercator
+### Spherical Mercator
 ![Spherical Mercator](https://raw.github.com/runderwood/vfr/master/out/sphmerc.png)
 
-###Geographic
+### Geographic
 ![Geographic](https://raw.github.com/runderwood/vfr/master/out/vfr_out.png)
 
-###Hydrology
+### Hydrology
 ![Hydrology](https://raw.github.com/runderwood/vfr/master/out/tx_res.png)
 
