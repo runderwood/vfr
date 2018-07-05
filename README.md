@@ -84,6 +84,9 @@ end
 ...
 
 ##Examples
+###Multilayer with Labels (using Pango and OGR's VRT facilities)
+![Multilayer](https://raw.github.com/runderwood/vfr/master/out/neco-sch.svg)
+
 ###Labels (using Pango)
 ![Labels](https://raw.github.com/runderwood/vfr/master/out/txcopop.png)
 

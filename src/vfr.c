@@ -703,7 +703,7 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
             vfr_color_compextr(style->stroke, 'r'),
             vfr_color_compextr(style->stroke, 'g'),
             vfr_color_compextr(style->stroke, 'b'));
-    cairo_set_line_width(cr, 2);
+    cairo_set_line_width(cr, 1);
     cairo_stroke(cr);
     return 0;
 }
