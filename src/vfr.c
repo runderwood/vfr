@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -496,8 +497,8 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             lua_pop(L, 2);
         }
         lua_pushstring(L, "fill");
-        lua_gettable(L, -2);
-        if(lua_istable(L, -1)) {
+        if(lua_istable(L, -2)) {
+            lua_gettable(L, -2);
             lua_pushstring(L, "r");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
@@ -519,6 +520,8 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
                 style->fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
             }
             lua_pop(L, 2);
+        } else {
+            style->fill = 0x01000000;
         }
         lua_pushstring(L, "size");
         lua_gettable(L, -2);
@@ -694,11 +697,13 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxx = (x - ext->MinX)/pxw;
     double pxy = (ext->MaxY - y)/pxh;
     cairo_arc(cr, pxx, pxy, style->size, 0, 2*M_PI);
-    cairo_set_source_rgb(cr, 
-            vfr_color_compextr(style->fill, 'r'), 
-            vfr_color_compextr(style->fill, 'g'), 
-            vfr_color_compextr(style->fill, 'b')); 
-    cairo_fill_preserve(cr);
+    if(style->fill <= 0xffffff) {
+        cairo_set_source_rgb(cr, 
+                vfr_color_compextr(style->fill, 'r'), 
+                vfr_color_compextr(style->fill, 'g'), 
+                vfr_color_compextr(style->fill, 'b')); 
+        cairo_fill_preserve(cr);
+    }
     cairo_set_source_rgb(cr, 
             vfr_color_compextr(style->stroke, 'r'),
             vfr_color_compextr(style->stroke, 'g'),
@@ -752,11 +757,13 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxx = (x - ext->MinX)/pxw;
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
-    cairo_set_source_rgb(cr, 
-            vfr_color_compextr(style->fill, 'r'), 
-            vfr_color_compextr(style->fill, 'g'), 
-            vfr_color_compextr(style->fill, 'b')); 
-    cairo_fill_preserve(cr);
+    if(style->fill <= 0xffffff) {
+        cairo_set_source_rgb(cr, 
+                vfr_color_compextr(style->fill, 'r'), 
+                vfr_color_compextr(style->fill, 'g'), 
+                vfr_color_compextr(style->fill, 'b')); 
+        cairo_fill_preserve(cr);
+    }
     cairo_set_source_rgb(cr, 
             vfr_color_compextr(style->stroke, 'r'), 
             vfr_color_compextr(style->stroke, 'g'), 
