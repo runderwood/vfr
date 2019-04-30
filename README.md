@@ -27,13 +27,14 @@ On Debian/Ubuntu you can do:
 
 ## Embedded Lua
 
-- Style features using embedded Lua. See ./etc/style0.lua  and ./etc/style1.lua
-- Default styles are drawn from a global variable named "vfr_feature_style"
-- Feature styles may also be programmatically altered using a global function called "vfrFeatureStyle" which takes one argument, a table with fields from the feature (obtain these using ogrinfo or some such tool)
+- Style features using embedded Lua. See ./etc/style0.lua  and ./etc/style1.lua (or the example below).
+- Default styles are drawn from a global variable named `vfr_feature_style`.
+- Feature styles may also be programmatically altered using a global function called `vfrFeatureStyle` which takes one argument, a table with fields from the feature (obtain these using `ogrinfo` or a similar tool).
+- When using multilayer datasources (e.g. via an OGR VRT file), use the special feature table member `_vfr_layer` to find out which layer a feature belongs to (see example below).
 
 Example:
 
-1. The following is a Lua file for use with VFR. When used with a multilayer OGR datasource including Nebraska school district boundaries, it plots the districts with white fill and light gray stroke, cleans up the district names, and labels each (see [the map](https://raw.github.com/runderwood/vfr/master/out/nesd.png).
+1. The following is a Lua file for use with VFR. When used with a multilayer OGR datasource including Nebraska school district boundaries, it plots the districts with white fill and light gray stroke, cleans up the district names, and labels each (see [the map](https://raw.github.com/runderwood/vfr/master/out/nesd.png)).
 ```lua
 vfr_style = {
     stroke = {
