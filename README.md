@@ -17,12 +17,13 @@ On Debian/Ubuntu you can do:
     vfr: the command line vector feature renderer
 
     usage:
-      ./vfr render [-out outfile] -ht INT | -wd INT path [-fg 0x000000] [-bg 0x000000] [-lua luafile] <source>
+      ./vfr fonts
       ./vfr inform <source>
+      ./vfr render [-out outfile] -ht INT | -wd INT path [-fg 0x000000] [-bg 0x000000] [-lua luafile] <source>
       ./vfr version
 
     example:
-      vfr render -out mymap.png -wd 400 -lua myluafile.lua /home/johnsmith/geodata/myshapefile
+      vfr render -out mymap.svg -wd 400 -lua myluafile.lua /home/johnsmith/geodata/myshapefile
 
 ## Embedded Lua
 
@@ -32,51 +33,64 @@ On Debian/Ubuntu you can do:
 
 Example:
 
-1. The following takes a shapefile of Texas county boundaries with census data attached and fills black the counties with steady population decline since the 1920 census (the generated map is visible below):
+1. The following is Lua file takes a multilayer OGR datasource, including Nebraska school district boundaries, plots the districts, cleans up the district names, and labels each (see [the map](https://raw.github.com/runderwood/vfr/master/out/nesd.png).
 ```lua
 vfr_style = {
-    fgcolor = {
+    stroke = {
         r = 127,
         g = 127,
         b = 127
     },
-    bgcolor = {
-        r = 255,
-        g = 255,
-        b = 255
-    },
+    fill = nil,
     size = 1
 }
 
 function vfrFeatureStyle(ftr)
     fstyle = {
-        fgcolor = {
-            r = 64,
-            g = 64,
-            b = 64
+        stroke = {
+            r = 0,
+            g = 0,
+            b = 0
         },
-        bgcolor = {
+        fill = {
             r = 255,
             g = 255,
             b = 255 
         },
-        size = 1
+        size = 1,
+        label_place = 0,
+        label_fill = { r=255, g=0, b=0 }
     }
 
-    if(ftr.pop2010 < ftr.pop2000 and ftr.pop2000 < ftr.pop1990 and ftr.pop1990 < ftr.pop1980 and
-        ftr.pop1980 < ftr.pop1970 and ftr.pop1970 < ftr.pop1960 and ftr.pop1960 < ftr.pop1950 and
-            ftr.pop1950 < ftr.pop1940 and ftr.pop1940 < ftr.pop1930) then
-        fstyle.bgcolor = {r = 0, g = 0, b = 0}
-        fstyle.fgcolor = {r = 0, g = 0, b = 0}
+    if(ftr._vfr_layer == "schooldistricts") then
+        fstyle.fill = { r=255, g=255, b=255 }
+        fstyle.fill_opacity = 100
+        fstyle.stroke = { r=96, g=96, b=96 }
+        fstyle.stroke_opacity = 50
+        fstyle.size = 1
+        fstyle.label_fill = { r=127, g=127, b=127 }
+        fstyle.label_place = 1
+        fstyle.label_text = ftr.NAME:gsub("(%s+Public Schools)", ""):gsub("(%s+Community Schools)", ""):gsub("(%s+Schools)", "")
+        fstyle.label_fill = { r=32, g=32, b=32 }
+        fstyle.label_fontdesc = "Cabin Semibold 16"
+        fstyle.label_opacity = 80
+    elseif(ftr._vfr_layer == "blocks") then
+        fstyle.stroke = { r=33, g=64, b=110 }
+        fstyle.fill = { r=66, g=127, b=221 }
+        fstyle.fill_opacity = 80
+        fstyle.size = 1
+    else
+        fstyle.stroke = { r=127, g=127, b=127}
+        fstyle.label_fill = { r=127, g=127, b=127}
+        fstyle.label_place = 1
+        require 'pl.pretty'.dump(ftr)
     end
+    
     return fstyle
 end
 ```
 
 ## Coming Soon
-- Layers
-- Pango label typesetting
-- SVG (and more) output options
 - Interpolation and other spatial tools (in lua)
 - Legends
 - More epimap options (bgcolor, etc.)
@@ -87,6 +101,10 @@ end
 
 ### Multilayer with Labels (using Pango and OGR's VRT facilities)
 ![Multilayer](https://raw.github.com/runderwood/vfr/master/out/neco-sch.png)
+
+### Opacity, Labels
+
+![Labels](https://raw.github.com/runderwood/vfr/master/out/nesd.png)
 
 ### Labels (using Pango)
 ![Labels](https://raw.github.com/runderwood/vfr/master/out/txcopop.png)
