@@ -50,7 +50,9 @@
 typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
+// TODO check srs'es
 // TODO: opacity everywhere.
+// TODO list fonts via pango
 // TODO: style dashes, hashes (patterns)
 typedef struct vfr_style_s {
     uint64_t fill;
@@ -91,6 +93,7 @@ static void usage(void);
 static int runrender(int argc, char **argv);
 static int runinform(int argc, char **argv);
 static int runversion(int argc, char **argv);
+static int runfonts(int argc, char **argv);
 
 static int implrender(const char *datpath, int iw, int ih, 
         const char *outfilenm, vfr_style_t *style, const char *luafilenm);
@@ -130,6 +133,8 @@ int main(int argc, char **argv) {
         rv = runinform(argc, argv);
     } else if(!strcmp(argv[1], "version")) {
         rv = runversion(argc, argv);
+    } else if(!strcmp(argv[1], "fonts")) {
+        rv = runfonts(argc, argv);
     } else {
         usage();
     }
@@ -140,8 +145,9 @@ static void usage(void){
     fprintf(stderr, "%s: the command line vector feature renderer\n", g_progname);
     fprintf(stderr, "\n");
     fprintf(stderr, "usage:\n");
-    fprintf(stderr, "  %s render [-out outfile] -ht INT | -wd INT [-lua luafile] datasrc\n", g_progname);
+    fprintf(stderr, "  %s fonts\n", g_progname);
     fprintf(stderr, "  %s inform dsrc\n", g_progname);
+    fprintf(stderr, "  %s render [-out outfile] -ht INT | -wd INT [-lua luafile] datasrc\n", g_progname);
     fprintf(stderr, "  %s version\n", g_progname);
     fprintf(stderr, "\n");
     exit(1);
@@ -299,6 +305,11 @@ static int runversion(int argc, char **argv) {
     return 0;
 }
 
+static int runfonts(int argc, char **argv) {
+    printf("coming soon\n");
+    return 0;
+}
+
 static int implrender(const char *datpath, int iw, int ih, 
         const char *outfilenm, vfr_style_t *style, const char *luafilenm) {
     
@@ -334,7 +345,7 @@ static int implrender(const char *datpath, int iw, int ih,
     long j;
     OGREnvelope ext;
     vfr_ds_extent(src, &ext);
-    fprintf(stderr, "got extents: max = (%f, %f), min = (%f, %f)\n", ext.MaxX, ext.MaxY, ext.MinX, ext.MinY);
+    fprintf(stderr, "got extents: \n\tmax = (%f, %f)\n\tmin = (%f, %f)\n", ext.MaxX, ext.MaxY, ext.MinX, ext.MinY);
 
     // get pixel-to-map unit ratio
     double pxw, pxh;
@@ -375,7 +386,7 @@ static int implrender(const char *datpath, int iw, int ih,
     for(i=0; i<layercount; i++) {
         layer = OGR_DS_GetLayer(src, i);
         lfcount = OGR_L_GetFeatureCount(layer, 0);
-        fprintf(stderr, "- %d feature(s)\n", lfcount);
+        fprintf(stderr, "layer \"%s\": %d feature(s)\n", OGR_L_GetName(layer), lfcount);
         for(j=0; j<lfcount; j++) {
             ftr = OGR_L_GetFeature(layer, j);
             geom = OGR_F_GetGeometryRef(ftr);
@@ -805,7 +816,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     
     if(!style->label_place) return 0;
     
-    fprintf(stderr, "label feature #%ld\n", OGR_F_GetFID(ftr));
+    //fprintf(stderr, "label feature #%ld\n", OGR_F_GetFID(ftr));
 
     PangoFontDescription *fdesc;
     PangoLayout *plyo;
