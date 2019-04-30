@@ -53,6 +53,7 @@ typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
 // TODO: check srs'es
 // TODO: explicitly reset default in synch
 // TODO: style dashes, hashes (patterns)
+// TODO: ranges on numeric fields? (e.g. _vfr_layer_ranges...)
 typedef struct vfr_style_s {
     uint64_t fill;
     uint64_t stroke;
