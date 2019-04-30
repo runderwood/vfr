@@ -243,7 +243,7 @@ static int runrender(int argc, char **argv) {
     int rv;
 
     if(outfilenm == NULL) {
-        rv = implrender(path, iw, ih, "vfr_out.png", &style, luafilenm);
+        rv = implrender(path, iw, ih, "vfr_out.svg", &style, luafilenm);
     } else {
         rv = implrender(path, iw, ih, outfilenm, &style, luafilenm);
     }
@@ -386,6 +386,14 @@ static int implrender(const char *datpath, int iw, int ih,
             if(luafilenm != NULL) {
                 eval_feature_style(L, ftr, style);
             }
+            if(j && !(j % 200)) {
+                fprintf(stderr, ".");
+                if(!(j % 10000)) {
+                    fprintf(stderr, " (%ld/%d)\n", j, lfcount);
+                }
+            } else if(j == (lfcount-1)) {
+                fprintf(stderr, "done.\n");
+            }
             vfr_draw_geom(cr, ftr, geom, &ext, pxw, pxh, style);
             vfr_draw_label(lcr, ftr, geom, &ext, pxw, pxh, style);
             OGR_F_Destroy(ftr);
@@ -469,7 +477,7 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
     int objlen;
 
     if(!lua_istable(L, -1)) {
-        fprintf(stderr, "style is not a valid lua table");
+        fprintf(stderr, "style is not a valid lua table\n");
     } else {
         lua_pushstring(L, "stroke");
         lua_gettable(L, -2);
@@ -497,8 +505,8 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             lua_pop(L, 2);
         }
         lua_pushstring(L, "fill");
-        if(lua_istable(L, -2)) {
-            lua_gettable(L, -2);
+        lua_gettable(L, -2);
+        if(lua_istable(L, -1)) {
             lua_pushstring(L, "r");
             lua_gettable(L, -2);
             if(lua_isnumber(L, -1)) {
@@ -522,6 +530,7 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
             lua_pop(L, 2);
         } else {
             style->fill = 0x01000000;
+            lua_pop(L, 1);
         }
         lua_pushstring(L, "size");
         lua_gettable(L, -2);
@@ -646,7 +655,7 @@ static int vfr_draw_geom(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom, OGREnv
     OGRGeometryH geom2;
 
     int g, gcount;
-    fprintf(stderr, "rendering %s\n", OGR_G_GetGeometryName(geom));
+    //fprintf(stderr, "rendering %s\n", OGR_G_GetGeometryName(geom));
     
     switch(wkbFlatten(OGR_G_GetGeometryType(geom))) {
         case wkbPoint:
