@@ -33,7 +33,7 @@ On Debian/Ubuntu you can do:
 
 Example:
 
-1. The following is Lua file takes a multilayer OGR datasource, including Nebraska school district boundaries, plots the districts, cleans up the district names, and labels each (see [the map](https://raw.github.com/runderwood/vfr/master/out/nesd.png).
+1. The following is a Lua file for use with VFR. When used with a multilayer OGR datasource including Nebraska school district boundaries, it plots the districts with white fill and light gray stroke, cleans up the district names, and labels each (see [the map](https://raw.github.com/runderwood/vfr/master/out/nesd.png).
 ```lua
 vfr_style = {
     stroke = {
@@ -88,7 +88,8 @@ function vfrFeatureStyle(ftr)
     
     return fstyle
 end
-```
+``` 
+*Note the font description (`Cabin Semibold 16`). For a list of font families and faces available to `vfr` on your system, use the `fonts` command.*
 
 ## Coming Soon
 - Interpolation and other spatial tools (in lua)
