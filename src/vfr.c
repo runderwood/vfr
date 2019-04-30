@@ -50,17 +50,21 @@
 typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
-// TODO check srs'es
+// TODO: check srs'es
 // TODO: opacity everywhere.
-// TODO list fonts via pango
+// TODO: explicitly reset default in synch
+// TODO: list fonts via pango
 // TODO: style dashes, hashes (patterns)
 typedef struct vfr_style_s {
     uint64_t fill;
     uint64_t stroke;
+    int fill_opacity;
+    int stroke_opacity;
     int size;
     vfr_label_place_t label_place;
     char *label_field;
     uint64_t label_fill;
+    int label_opacity;
     char *label_text;
     char *label_fontdesc;
     uint32_t label_flags;
@@ -163,9 +167,10 @@ static int runrender(int argc, char **argv) {
     char *path = NULL;
     char *outfilenm = NULL;
     char *luafilenm = NULL;
+    // init style struct
     vfr_style_t style = {
-        0xffffff,0x000000,1, //stroke, fill, size
-        VFRPLACE_NONE,NULL,0xffffff,NULL,NULL // label placement, field, color, text
+        0xffffff, 100, 0x000000, 100, 1, //fill, fopacity, stroke, sopacity, size
+        VFRPLACE_NONE, NULL, 0xffffff, 100, NULL, NULL // label placement, field, color, text
     };
     int iw, ih, i;
     iw = 0;
@@ -491,153 +496,189 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
 
     if(!lua_istable(L, -1)) {
         fprintf(stderr, "style is not a valid lua table\n");
+        return -1;
+    }
+
+    lua_pushstring(L, "stroke");
+    lua_gettable(L, -2);
+    if(lua_istable(L, -1)) {
+        lua_pushstring(L, "r");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->stroke = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+        }
+        lua_pop(L, 1);
+        lua_pushstring(L, "g");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->stroke |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+        }
+        lua_pop(L, 1);
+        lua_pushstring(L, "b");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->stroke |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+        }
+        lua_pop(L, 2);
     } else {
-        lua_pushstring(L, "stroke");
-        lua_gettable(L, -2);
-        if(lua_istable(L, -1)) {
-            lua_pushstring(L, "r");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->stroke = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-            }
-            lua_pop(L, 1);
-            lua_pushstring(L, "g");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->stroke |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-            }
-            lua_pop(L, 1);
-            lua_pushstring(L, "b");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->stroke |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-            }
-            lua_pop(L, 2);
-        } else {
-            style->stroke = 0x01000000;
-            lua_pop(L, 1);
-        }
-        lua_pushstring(L, "fill");
-        lua_gettable(L, -2);
-        if(lua_istable(L, -1)) {
-            lua_pushstring(L, "r");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-            }
-            lua_pop(L, 1);
-            lua_pushstring(L, "g");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-            }
-            lua_pop(L, 1);
-            lua_pushstring(L, "b");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-            }
-            lua_pop(L, 2);
-        } else {
-            style->fill = 0x01000000;
-            lua_pop(L, 1);
-        }
-        lua_pushstring(L, "size");
+        style->stroke = 0x01000000;
+        lua_pop(L, 1);
+    }
+    lua_pushstring(L, "fill");
+    lua_gettable(L, -2);
+    if(lua_istable(L, -1)) {
+        lua_pushstring(L, "r");
         lua_gettable(L, -2);
         if(lua_isnumber(L, -1)) {
-            style->size = (int)lua_tonumber(L, -1);
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
         }
         lua_pop(L, 1);
-        lua_pushstring(L, "label_place");
+        lua_pushstring(L, "g");
         lua_gettable(L, -2);
         if(lua_isnumber(L, -1)) {
-            style->label_place = (int)lua_tonumber(L, -1);
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
         }
         lua_pop(L, 1);
-        lua_pushstring(L, "label_fontdesc");
+        lua_pushstring(L, "b");
         lua_gettable(L, -2);
-        if(lua_isstring(L, -1)) {
-            objlen = lua_objlen(L, -1);
-            if(style->label_fontdesc != NULL) {
-                free(style->label_fontdesc);
-            }
-            style->label_fontdesc = malloc(objlen+1);
-            if(style->label_fontdesc == NULL) {
-                fprintf(stderr, "out of memory\n");
-                exit(1);
-            }
-            memcpy(style->label_fontdesc, lua_tostring(L, -1), objlen);
-            style->label_fontdesc[objlen] = '\0';
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
         }
+        lua_pop(L, 2);
+    } else {
+        style->fill = 0x01000000;
         lua_pop(L, 1);
-        lua_pushstring(L, "label_field");
-        lua_gettable(L, -2);
-        if(lua_isstring(L, -1)) {
-            // we need to copy this string, not juse use the pointer...
-            objlen = lua_objlen(L, -1);
-            // free old string
-            if(style->label_field != NULL) {
-                free(style->label_field);
-            }
-            style->label_field = malloc(objlen+1);
-            if(style->label_field == NULL) {
-                fprintf(stderr, "out of memory\n");
-                exit(1);
-            }
-            memcpy(style->label_field, lua_tostring(L, -1), objlen);
-            style->label_field[objlen] = '\0';
-        }
-        lua_pop(L, 1);
-        lua_pushstring(L, "label_text");
-        lua_gettable(L, -2);
-        if(lua_isstring(L, -1)) {
-            // we need to copy this string, not juse use the pointer...
-            objlen = lua_objlen(L, -1);
-            // free old string
-            if(style->label_text != NULL) {
-                free(style->label_text);
-            }
-            style->label_text = malloc(objlen+1);
-            if(style->label_text == NULL) {
-                fprintf(stderr, "out of memory\n");
-                exit(1);
-            }
-            memcpy(style->label_text, lua_tostring(L, -1), objlen);
-            style->label_text[objlen] = '\0';
-        }
-        lua_pop(L, 1);
-        lua_pushstring(L, "label_fill");
-        lua_gettable(L, -2);
-        if(lua_istable(L, -1)) {
-            lua_pushstring(L, "r");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->label_fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
-            }
-            lua_pop(L, 1);
-            lua_pushstring(L, "g");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->label_fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
-            }
-            lua_pop(L, 1);
-            lua_pushstring(L, "b");
-            lua_gettable(L, -2);
-            if(lua_isnumber(L, -1)) {
-                // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
-                style->label_fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
-            }
-            lua_pop(L, 2);
+    }
+    lua_pushstring(L, "fill_opacity");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->fill_opacity = (int)lua_tonumber(L, -1);
+        if(style->fill_opacity < 0) {
+            style->fill_opacity = 0;
+        } else if(style->fill_opacity > 100) {
+            style->fill_opacity = 100;
         }
     }
+    lua_pop(L, 1);
+    lua_pushstring(L, "stroke_opacity");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->stroke_opacity = (int)lua_tonumber(L, -1);
+        if(style->stroke_opacity < 0) {
+            style->stroke_opacity = 0;
+        } else if(style->stroke_opacity > 100) {
+            style->stroke_opacity = 100;
+        }
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "size");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->size = (int)lua_tonumber(L, -1);
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_place");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_place = (int)lua_tonumber(L, -1);
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_fontdesc");
+    lua_gettable(L, -2);
+    if(lua_isstring(L, -1)) {
+        objlen = lua_objlen(L, -1);
+        if(style->label_fontdesc != NULL) {
+            free(style->label_fontdesc);
+        }
+        style->label_fontdesc = malloc(objlen+1);
+        if(style->label_fontdesc == NULL) {
+            fprintf(stderr, "out of memory\n");
+            exit(1);
+        }
+        memcpy(style->label_fontdesc, lua_tostring(L, -1), objlen);
+        style->label_fontdesc[objlen] = '\0';
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_field");
+    lua_gettable(L, -2);
+    if(lua_isstring(L, -1)) {
+        // we need to copy this string, not juse use the pointer...
+        objlen = lua_objlen(L, -1);
+        // free old string
+        if(style->label_field != NULL) {
+            free(style->label_field);
+        }
+        style->label_field = malloc(objlen+1);
+        if(style->label_field == NULL) {
+            fprintf(stderr, "out of memory\n");
+            exit(1);
+        }
+        memcpy(style->label_field, lua_tostring(L, -1), objlen);
+        style->label_field[objlen] = '\0';
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_text");
+    lua_gettable(L, -2);
+    if(lua_isstring(L, -1)) {
+        // we need to copy this string, not juse use the pointer...
+        objlen = lua_objlen(L, -1);
+        // free old string
+        if(style->label_text != NULL) {
+            free(style->label_text);
+        }
+        style->label_text = malloc(objlen+1);
+        if(style->label_text == NULL) {
+            fprintf(stderr, "out of memory\n");
+            exit(1);
+        }
+        memcpy(style->label_text, lua_tostring(L, -1), objlen);
+        style->label_text[objlen] = '\0';
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_fill");
+    lua_gettable(L, -2);
+    if(lua_istable(L, -1)) {
+        lua_pushstring(L, "r");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->label_fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+        }
+        lua_pop(L, 1);
+        lua_pushstring(L, "g");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->label_fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+        }
+        lua_pop(L, 1);
+        lua_pushstring(L, "b");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->label_fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_opacity");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_opacity = (int)lua_tonumber(L, -1);
+        if(style->label_opacity < 0) {
+            style->label_opacity = 0;
+        } else if(style->label_opacity > 100) {
+            style->label_opacity = 100;
+        }
+    }
+    lua_pop(L, 1);
+
     return 0;
 }
 
@@ -723,10 +764,11 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double pxy = (ext->MaxY - y)/pxh;
     cairo_arc(cr, pxx, pxy, style->size, 0, 2*M_PI);
     if(style->fill <= 0xffffff) {
-        cairo_set_source_rgb(cr, 
+        cairo_set_source_rgba(cr, 
                 vfr_color_compextr(style->fill, 'r'), 
                 vfr_color_compextr(style->fill, 'g'), 
-                vfr_color_compextr(style->fill, 'b'));
+                vfr_color_compextr(style->fill, 'b'),
+                ((float)style->fill_opacity)/100.0);
         if(style->stroke <= 0xffffff) {
             cairo_fill_preserve(cr);
         } else {
@@ -734,10 +776,11 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
         }
     }
     if(style->stroke <= 0xffffff) {
-        cairo_set_source_rgb(cr, 
+        cairo_set_source_rgba(cr, 
                 vfr_color_compextr(style->stroke, 'r'),
                 vfr_color_compextr(style->stroke, 'g'),
-                vfr_color_compextr(style->stroke, 'b'));
+                vfr_color_compextr(style->stroke, 'b'),
+                ((float)style->stroke_opacity)/100.0);
         cairo_set_line_width(cr, style->size);
         cairo_stroke(cr);
     }
@@ -751,10 +794,11 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     double x, y, z, pxx, pxy;
     int i;
     cairo_set_line_width(cr, style->size);
-    cairo_set_source_rgb(cr,
+    cairo_set_source_rgba(cr,
             vfr_color_compextr(style->stroke, 'r'),
             vfr_color_compextr(style->stroke, 'g'),
-            vfr_color_compextr(style->stroke, 'b'));
+            vfr_color_compextr(style->stroke, 'b'),
+            ((float)style->stroke_opacity)/100.0);
     for(i = 0; i < pcount; i++) {
         OGR_G_GetPoint(geom, i, &x, &y, &z);
         pxx = (x - ext->MinX)/pxw;
@@ -789,10 +833,11 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
     if(style->fill <= 0xffffff) {
-        cairo_set_source_rgb(cr, 
+        cairo_set_source_rgba(cr, 
                 vfr_color_compextr(style->fill, 'r'), 
                 vfr_color_compextr(style->fill, 'g'), 
-                vfr_color_compextr(style->fill, 'b')); 
+                vfr_color_compextr(style->fill, 'b'),
+                ((float)style->fill_opacity)/100.0); 
         if(style->stroke <= 0xffffff) {
             cairo_fill_preserve(cr);
         } else {
@@ -800,10 +845,11 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
         }
     }
     if(style->stroke <= 0xffffff) {
-        cairo_set_source_rgb(cr, 
+        cairo_set_source_rgba(cr, 
                 vfr_color_compextr(style->stroke, 'r'), 
                 vfr_color_compextr(style->stroke, 'g'), 
-                vfr_color_compextr(style->stroke, 'b')); 
+                vfr_color_compextr(style->stroke, 'b'),
+                ((float)style->stroke_opacity)/100.0); 
         cairo_set_line_width(cr, style->size);
         cairo_stroke(cr);
     }
@@ -831,10 +877,11 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     param_t* params;
     double pathlen, lblwidth;
 
-    cairo_set_source_rgb(cr,
+    cairo_set_source_rgba(cr,
             vfr_color_compextr(style->label_fill, 'r'),
             vfr_color_compextr(style->label_fill, 'g'),
-            vfr_color_compextr(style->label_fill, 'b'));
+            vfr_color_compextr(style->label_fill, 'b'),
+            ((float)style->label_opacity)/100.0);
 
     // layout
     plyo = pango_cairo_create_layout(cr);
@@ -921,7 +968,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                 cairo_append_path(cr, lyopath);
                 cairo_path_destroy(lyopath);
                 lyopath = NULL;
-                cairo_set_source_rgb(cr, 1.0, 0.0, 0.0);
+                cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 1.0);
                 cairo_fill(cr);
             } else {
                 centroid = OGR_G_CreateGeometry(wkbPoint);
