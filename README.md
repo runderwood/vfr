@@ -1,7 +1,7 @@
 ## About
-This program renders shapefiles (and other OGR-compatible datasources) as PNG images. Features
+This program renders shapefiles (and other OGR-compatible datasources) as vector graphics (SVG). Features
 can be styled programmatically using Lua. I've used it as a tool for quickly generating simple 
-maps for use in educational settings.
+maps for use in educational and research settings.
 
 ## Requirements
 To build vfr, you need the following dev packages:
