@@ -51,9 +51,7 @@ typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
 // TODO: check srs'es
-// TODO: opacity everywhere.
 // TODO: explicitly reset default in synch
-// TODO: list fonts via pango
 // TODO: style dashes, hashes (patterns)
 typedef struct vfr_style_s {
     uint64_t fill;
@@ -312,6 +310,32 @@ static int runversion(int argc, char **argv) {
 
 static int runfonts(int argc, char **argv) {
     printf("coming soon\n");
+
+    PangoFontMap* fmap = pango_cairo_font_map_get_default();
+    PangoFontFamily** fams;
+    PangoFontFamily* fam;
+    PangoFontFace** faces;
+    PangoFontFace* face;
+    int numfams, numfaces, i, j;
+    const char* famname;
+    const char* facename;
+
+    pango_font_map_list_families(fmap, &fams, &numfams);
+    for(i=0; i<numfams; i++) {
+        fam = fams[i];
+        famname = pango_font_family_get_name(fam);
+        printf("%s:", famname);
+        pango_font_family_list_faces(fam, &faces, &numfaces);
+        for(j=0; j<numfaces; j++) {
+            face = faces[j];
+            facename = pango_font_face_get_face_name(face);
+            printf(" %s", facename);
+            if(j<(numfaces-1)) printf(",");
+        }
+        printf("\n");
+        g_free(faces);
+    }
+    g_free(fams);
     return 0;
 }
 
