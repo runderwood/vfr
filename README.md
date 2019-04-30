@@ -105,6 +105,9 @@ For now, `vfr` outputs SVG, which can be rasterized by programs like [`rsvg-conv
 
 ## Examples
 
+### Dot-density Map (of Nebraska Cattle Pop.)
+![Dot-density](https://raw.github.com/runderwood/vfr/master/out/necocatdots.png)
+
 ### Multilayer with Labels (using Pango and OGR's VRT facilities)
 ![Multilayer](https://raw.github.com/runderwood/vfr/master/out/neco-sch.png)
 
