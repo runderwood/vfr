@@ -50,6 +50,7 @@
 typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
+// TODO: opacity everywhere.
 // TODO: style dashes, hashes (patterns)
 typedef struct vfr_style_s {
     uint64_t fill;
@@ -402,7 +403,7 @@ static int implrender(const char *datpath, int iw, int ih,
     fprintf(stderr, "painting labels over shapes...\n");
     cairo_set_source_surface(cr, lsurface, 0.0, 0.0);
     cairo_paint(cr);
-    fprintf(stderr, "written to %s\n", outfilenm);
+    fprintf(stderr, "writing to %s...", outfilenm);
     // fprintf(stderr, "writing to %s\n", outfilenm);
     // cairo_surface_write_to_png(surface, outfilenm);
     // cairo_surface_write_to_png(lsurface, "test.png");
@@ -414,6 +415,7 @@ static int implrender(const char *datpath, int iw, int ih,
     if(luafilenm != NULL) {
         lua_close(L);
     }
+    fprintf(stderr, "done.\n");
     return 0;
 }
 
@@ -503,6 +505,9 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
                 style->stroke |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
             }
             lua_pop(L, 2);
+        } else {
+            style->stroke = 0x01000000;
+            lua_pop(L, 1);
         }
         lua_pushstring(L, "fill");
         lua_gettable(L, -2);
@@ -710,15 +715,21 @@ static int vfr_draw_point(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
         cairo_set_source_rgb(cr, 
                 vfr_color_compextr(style->fill, 'r'), 
                 vfr_color_compextr(style->fill, 'g'), 
-                vfr_color_compextr(style->fill, 'b')); 
-        cairo_fill_preserve(cr);
+                vfr_color_compextr(style->fill, 'b'));
+        if(style->stroke <= 0xffffff) {
+            cairo_fill_preserve(cr);
+        } else {
+            cairo_fill(cr);
+        }
     }
-    cairo_set_source_rgb(cr, 
-            vfr_color_compextr(style->stroke, 'r'),
-            vfr_color_compextr(style->stroke, 'g'),
-            vfr_color_compextr(style->stroke, 'b'));
-    cairo_set_line_width(cr, 1);
-    cairo_stroke(cr);
+    if(style->stroke <= 0xffffff) {
+        cairo_set_source_rgb(cr, 
+                vfr_color_compextr(style->stroke, 'r'),
+                vfr_color_compextr(style->stroke, 'g'),
+                vfr_color_compextr(style->stroke, 'b'));
+        cairo_set_line_width(cr, style->size);
+        cairo_stroke(cr);
+    }
     return 0;
 }
 
@@ -771,14 +782,20 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
                 vfr_color_compextr(style->fill, 'r'), 
                 vfr_color_compextr(style->fill, 'g'), 
                 vfr_color_compextr(style->fill, 'b')); 
-        cairo_fill_preserve(cr);
+        if(style->stroke <= 0xffffff) {
+            cairo_fill_preserve(cr);
+        } else {
+            cairo_fill(cr);
+        }
     }
-    cairo_set_source_rgb(cr, 
-            vfr_color_compextr(style->stroke, 'r'), 
-            vfr_color_compextr(style->stroke, 'g'), 
-            vfr_color_compextr(style->stroke, 'b')); 
-    cairo_set_line_width(cr, style->size);
-    cairo_stroke(cr);
+    if(style->stroke <= 0xffffff) {
+        cairo_set_source_rgb(cr, 
+                vfr_color_compextr(style->stroke, 'r'), 
+                vfr_color_compextr(style->stroke, 'g'), 
+                vfr_color_compextr(style->stroke, 'b')); 
+        cairo_set_line_width(cr, style->size);
+        cairo_stroke(cr);
+    }
     return 0;
 }
 
