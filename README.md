@@ -104,7 +104,7 @@ end
 
 ### Opacity, Labels
 
-![Labels](https://raw.github.com/runderwood/vfr/master/out/nesd.png)
+![Labels](https://raw.github.com/runderwood/vfr/master/out/nesd0.png)
 
 ### Labels (using Pango)
 ![Labels](https://raw.github.com/runderwood/vfr/master/out/txcopop.png)
