@@ -105,6 +105,9 @@ For now, `vfr` outputs SVG, which can be rasterized by programs like [`rsvg-conv
 
 ## Examples
 
+### Patterned fill (detail of U.S. Census Bureau state geographies w/ dotted fill)
+![Pattern fill](https://raw.github.com/runderwood/vfr/master/out/hatchexample.png)
+
 ### Dot-density Map (of Nebraska Cattle Pop.)
 ![Dot-density](https://raw.github.com/runderwood/vfr/master/out/necocatdots.png)
 
