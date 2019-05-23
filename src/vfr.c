@@ -45,19 +45,35 @@
 #define VFRLABEL_WRPCHR 0x00020000 // wrap at character
 #define VFRLABEL_WRPWCH 0x00040000 // wrap at word, then char (tolerance?)
 
+#define VFRHATCH_NONE 0x00
+#define VFRHATCH_NONE_S "none"
+#define VFRHATCH_LINE 0x01    // hatch w/ lines
+#define VFRHATCH_LINE_S "lines"
+#define VFRHATCH_CROSS 0x02    // hatch w/ crosses
+#define VFRHATCH_CROSS_S "crosses"
+#define VFRHATCH_DOT  0x03    // hatch w/ dots
+#define VFRHATCH_DOT_S "dots"
+#define VFRHATCH_DOTLINE 0x04 // hatch w/ dotted lines
+#define VFRHATCH_DOTLINE_S "dotline"
+#define VFRHATCH_DOTCROS 0x05 // hatch w/ dotted crosses
+
 #define VFRDEFAULT_FONTDESC "Courier New 12"
 
 typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
 // TODO: check srs'es
+// TODO: hatches, other fills
 // TODO: explicitly reset default in synch
 // TODO: style dashes, hashes (patterns)
 // TODO: ranges on numeric fields? (e.g. _vfr_layer_ranges...)
 typedef struct vfr_style_s {
     uint64_t fill;
-    uint64_t stroke;
     int fill_opacity;
+    char *hatch_pattern;
+    double hatch_rotate;
+    double hatch_scale;
+    uint64_t stroke;
     int stroke_opacity;
     int size;
     vfr_label_place_t label_place;
@@ -121,6 +137,7 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath,
         double txtwidth, double placeat);
 static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *paramd_lblpath);
 static void transform_label_point(paramd_path_t *paramd_lblpath, double *xptr, double *yptr);
+static cairo_pattern_t* make_fill_pattern(vfr_style_t* style);
 
 static double vfr_color_compextr(uint64_t color, char c);
 // static vfr_list_t* vfr_list_new(void *dat);
@@ -168,7 +185,8 @@ static int runrender(int argc, char **argv) {
     char *luafilenm = NULL;
     // init style struct
     vfr_style_t style = {
-        0xffffff, 100, 0x000000, 100, 1, //fill, fopacity, stroke, sopacity, size
+        0xffffff, 100, NULL, 0.0, 1.0, // fill, fopacity, fill pattern, pattern rotate, pattern scale  
+        0x000000, 100, 1, // stroke, sopacity, size
         VFRPLACE_NONE, NULL, 0xffffff, 100, NULL, NULL // label placement, field, color, text
     };
     int iw, ih, i;
@@ -365,7 +383,6 @@ static int implrender(const char *datpath, int iw, int ih,
         }
 
         // load default style (if available)
-        // this should call a fxn, something like synch_style_table(*style, lua_state)
         lua_getglobal(L, "vfr_style");
         synch_style_table(L, style);
     }
@@ -703,7 +720,42 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
         }
     }
     lua_pop(L, 1);
-
+    lua_pushstring(L, "fill_pattern");
+    lua_gettable(L, -2);
+    if(lua_isstring(L, -1)) {
+        objlen = lua_objlen(L, -1);
+        if(style->hatch_pattern != NULL) {
+            free(style->hatch_pattern);
+        }
+        style->hatch_pattern = malloc(objlen+1);
+        if(style->hatch_pattern == NULL) {
+            exit(1);
+        }
+        memcpy(style->hatch_pattern, lua_tostring(L, -1), objlen);
+        style->hatch_pattern[objlen] = '\0';   
+    } else {
+        if(style->hatch_pattern != NULL) {
+            free(style->hatch_pattern);
+        }
+        style->hatch_pattern = NULL;
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "fill_rotate");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->hatch_rotate = lua_tonumber(L, -1)*(180.0/M_PI); // lua val is in degrees, make rads
+    } else {
+        style->hatch_rotate = 0.0;
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "fill_scale");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->hatch_scale = lua_tonumber(L, -1);
+    } else {
+        style->hatch_scale = 1.0;
+    }
+    lua_pop(L, 1);
     return 0;
 }
 
@@ -840,9 +892,12 @@ static int vfr_draw_linestring(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
 
 static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext, 
         double pxw, double pxh, vfr_style_t *style) {
+
     OGRGeometryH geom2 = OGR_G_GetGeometryRef(geom, 0);
     int p, ptcount = OGR_G_GetPointCount(geom2);
     double x, y, z, pxx, pxy;
+    cairo_pattern_t* hatchpat = NULL;
+    
     for(p=0; p<ptcount; p++) {
         OGR_G_GetPoint(geom2, p, &x, &y, &z);
         pxx = (x - ext->MinX)/pxw;
@@ -858,16 +913,24 @@ static int vfr_draw_polygon(cairo_t *cr, OGRGeometryH geom, OGREnvelope *ext,
     pxy = (ext->MaxY - y)/pxh;
     cairo_line_to(cr, pxx, pxy);
     if(style->fill <= 0xffffff) {
-        cairo_set_source_rgba(cr, 
-                vfr_color_compextr(style->fill, 'r'), 
-                vfr_color_compextr(style->fill, 'g'), 
-                vfr_color_compextr(style->fill, 'b'),
-                ((float)style->fill_opacity)/100.0); 
+        hatchpat = make_fill_pattern(style);
+        if(hatchpat != NULL) {
+            cairo_set_source(cr, hatchpat);
+        } else {
+            cairo_set_source_rgba(cr, 
+                    vfr_color_compextr(style->fill, 'r'), 
+                    vfr_color_compextr(style->fill, 'g'), 
+                    vfr_color_compextr(style->fill, 'b'),
+                    ((float)style->fill_opacity)/100.0);
+        }
         if(style->stroke <= 0xffffff) {
             cairo_fill_preserve(cr);
         } else {
             cairo_fill(cr);
         }
+    }
+    if(hatchpat != NULL) {
+        cairo_pattern_destroy(hatchpat);
     }
     if(style->stroke <= 0xffffff) {
         cairo_set_source_rgba(cr, 
@@ -1295,4 +1358,50 @@ static void transform_label_point(paramd_path_t *paramd_lblpath, double *xptr, d
     }
 
     return;
+}
+
+cairo_pattern_t* make_fill_pattern(vfr_style_t* style) {
+    
+    cairo_surface_t* psurf;
+    cairo_pattern_t* hatchpat;
+    cairo_t* cr2;
+    cairo_matrix_t pmatrix;
+
+    if(!style->hatch_pattern || !strcmp(style->hatch_pattern, VFRHATCH_NONE_S)) {
+        return NULL;
+    }
+
+    psurf = cairo_svg_surface_create(NULL, 9, 9);
+    cr2 = cairo_create(psurf);
+    if(!strcmp(style->hatch_pattern, VFRHATCH_LINE_S)) {
+        cairo_move_to(cr2, 4, -1);
+        cairo_line_to(cr2, 4, 9);
+    } else if(!strcmp(style->hatch_pattern, VFRHATCH_CROSS_S)) {
+        cairo_move_to(cr2, 4, -1);
+        cairo_line_to(cr2, 4, 9);
+        cairo_move_to(cr2, -1, 4);
+        cairo_line_to(cr2, 9, 4);
+    } else if(!strcmp(style->hatch_pattern, VFRHATCH_DOT_S)) {
+        cairo_arc(cr2, 4, 4, 1, 0, 2*M_PI);
+    } else {
+        cairo_destroy(cr2);
+        cairo_surface_destroy(psurf);
+        return NULL;
+    }
+    cairo_set_source_rgba(cr2,
+            vfr_color_compextr(style->fill, 'r'), 
+            vfr_color_compextr(style->fill, 'g'), 
+            vfr_color_compextr(style->fill, 'b'),
+            ((float)style->fill_opacity)/100.0);
+    cairo_set_line_width(cr2, 1);
+    cairo_set_line_cap(cr2, CAIRO_LINE_CAP_SQUARE);
+    cairo_stroke(cr2);
+    hatchpat = cairo_pattern_create_for_surface(psurf);
+    cairo_destroy(cr2);
+    cairo_surface_destroy(psurf);
+    cairo_matrix_init_scale(&pmatrix, 1.0/style->hatch_scale, 1.0/style->hatch_scale);
+    cairo_matrix_rotate(&pmatrix, style->hatch_rotate);
+    cairo_pattern_set_matrix(hatchpat, &pmatrix);
+    cairo_pattern_set_extend(hatchpat, CAIRO_EXTEND_REPEAT);
+    return hatchpat;
 }

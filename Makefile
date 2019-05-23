@@ -2,6 +2,7 @@ srcdir=./src/
 builddir=./build/
 
 CC=gcc
+#CFLAGS=-g -pg -std=gnu99 -Wall
 CFLAGS=-g -std=gnu99 -Wall
 
 vfr: 
