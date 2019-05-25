@@ -685,6 +685,8 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
         }
         memcpy(style->label_text, lua_tostring(L, -1), objlen);
         style->label_text[objlen] = '\0';
+    } else {
+        style->label_text = NULL;
     }
     lua_pop(L, 1);
     lua_pushstring(L, "label_fill");
@@ -1600,26 +1602,28 @@ void make_label_halo(cairo_t *cr, cairo_path_t *plyopath, vfr_style_t *style) {
         int i, hullptnum;
         double x, y;
         OGRGeometryH hullgeom = path_convex_hull(plyopath);
-        OGRGeometryH hullext = OGR_G_GetGeometryRef(hullgeom, 0);
-        hullptnum = OGR_G_GetPointCount(hullext);
-        cairo_new_path(cr);
-        x = OGR_G_GetX(hullext, 0);
-        y = OGR_G_GetY(hullext, 0);
-        cairo_move_to(cr, x, y);
-        for(i=1; i<hullptnum; i++) {
-            x = OGR_G_GetX(hullext, i);
-            y = OGR_G_GetY(hullext, i);
-            cairo_line_to(cr, x, y);
+        if(!OGR_G_IsEmpty(hullgeom)) {
+            OGRGeometryH hullext = OGR_G_GetGeometryRef(hullgeom, 0);
+            hullptnum = OGR_G_GetPointCount(hullext);
+            cairo_new_path(cr);
+            x = OGR_G_GetX(hullext, 0);
+            y = OGR_G_GetY(hullext, 0);
+            cairo_move_to(cr, x, y);
+            for(i=1; i<hullptnum; i++) {
+                x = OGR_G_GetX(hullext, i);
+                y = OGR_G_GetY(hullext, i);
+                cairo_line_to(cr, x, y);
+            }
+            cairo_close_path(cr);
+            cairo_set_source_rgba(cr,
+                vfr_color_compextr(style->label_halo_fill, 'r'),
+                vfr_color_compextr(style->label_halo_fill, 'g'),
+                vfr_color_compextr(style->label_halo_fill, 'b'),
+                ((float)style->label_opacity)/100.0);
+            cairo_fill_preserve(cr);
+            cairo_set_line_width(cr, style->label_halo_size);
+            cairo_stroke(cr);
         }
-        cairo_close_path(cr);
-        cairo_set_source_rgba(cr,
-            vfr_color_compextr(style->label_halo_fill, 'r'),
-            vfr_color_compextr(style->label_halo_fill, 'g'),
-            vfr_color_compextr(style->label_halo_fill, 'b'),
-            ((float)style->label_opacity)/100.0);
-        cairo_fill_preserve(cr);
-        cairo_set_line_width(cr, style->label_halo_size);
-        cairo_stroke(cr);
         OGR_G_DestroyGeometry(hullgeom);
         return;
 }
