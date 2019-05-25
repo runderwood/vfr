@@ -62,6 +62,7 @@
 typedef enum {VFRPLACE_NONE, VFRPLACE_AUTO, VFRPLACE_CENTER, VFRPLACE_POINT,
     VFRPLACE_LINE} vfr_label_place_t;
 
+// TODO: map config object (w/h, bgcolor...) w/ access to datasrc and then available in ftr style fn
 // TODO: check srs'es
 // TODO: hatches, other fills
 // TODO: explicitly reset default in synch
@@ -85,7 +86,7 @@ typedef struct vfr_style_s {
     uint32_t label_flags;
     double label_xoff;
     double label_yoff;
-    double label_halo_radius;
+    double label_halo_size;
     uint64_t label_halo_fill;
     double label_rotate;
     double label_width; // width for wrapping (in ems? or points?)
@@ -137,7 +138,9 @@ static cairo_path_t* get_linear_label_path(cairo_t *cr, paramd_path_t *parpath,
         double txtwidth, double placeat);
 static void transform_label_points(cairo_path_t *lyopath, paramd_path_t *paramd_lblpath);
 static void transform_label_point(paramd_path_t *paramd_lblpath, double *xptr, double *yptr);
-static cairo_pattern_t* make_fill_pattern(vfr_style_t* style);
+static cairo_pattern_t* make_fill_pattern(vfr_style_t *style);
+static void make_label_halo(cairo_t *cr, cairo_path_t* plyopath, vfr_style_t *style);
+//static int spline_knots(int knots, double *tx, double *ty, double *cpx, double *cpy);
 
 static double vfr_color_compextr(uint64_t color, char c);
 // static vfr_list_t* vfr_list_new(void *dat);
@@ -187,7 +190,8 @@ static int runrender(int argc, char **argv) {
     vfr_style_t style = {
         0xffffff, 100, NULL, 0.0, 1.0, // fill, fopacity, fill pattern, pattern rotate, pattern scale  
         0x000000, 100, 1, // stroke, sopacity, size
-        VFRPLACE_NONE, NULL, 0xffffff, 100, NULL, NULL // label placement, field, color, text
+        VFRPLACE_NONE, NULL, 0xffffff, 100, NULL, NULL, // label placement, field, color, text, fontdesc
+        0, 0, 0, 0, 0x01000000, 0, -1 // flags, xoff, yoff, halo rad, halo fill, label rot, label w
     };
     int iw, ih, i;
     iw = 0;
@@ -215,7 +219,7 @@ static int runrender(int argc, char **argv) {
                     return 1;
                 }
                 outfilenm = argv[i];
-            } else if(!strcmp(argv[i], "-fg")) {
+            } else if(!strcmp(argv[i], "-st")) {
                 ullval = strtoull(argv[++i], &end, 16);
                 if(ullval == 0 && end == argv[i]) {
                     usage();
@@ -229,7 +233,7 @@ static int runrender(int argc, char **argv) {
                 } else {
                     style.stroke = ullval;
                 }
-            } else if(!strcmp(argv[i], "-bg")) {
+            } else if(!strcmp(argv[i], "-fl")) {
                 ullval = strtoull(argv[++i], &end, 16);
                 if(ullval == 0 && end == argv[i]) {
                     usage();
@@ -756,6 +760,40 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
         style->hatch_scale = 1.0;
     }
     lua_pop(L, 1);
+    lua_pushstring(L, "label_halo_fill");
+    lua_gettable(L, -2);
+    if(lua_istable(L, -1)) {
+        lua_pushstring(L, "r");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->label_halo_fill = ((int)lua_tonumber(L, -1) << 16) & 0xff0000;
+        }
+        lua_pop(L, 1);
+        lua_pushstring(L, "g");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->label_halo_fill |= ((int)lua_tonumber(L, -1) << 8) & 0x00ff00;
+        }
+        lua_pop(L, 1);
+        lua_pushstring(L, "b");
+        lua_gettable(L, -2);
+        if(lua_isnumber(L, -1)) {
+            // should check for valid color here. maybe later. meantime, expect weirdness for n > 255
+            style->label_halo_fill |= ((int)lua_tonumber(L, -1)) & 0x0000ff;
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_halo_size");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_halo_size = lua_tonumber(L, -1);
+    } else {
+        style->label_halo_size = 1.0;
+    }
+    lua_pop(L, 1);
     return 0;
 }
 
@@ -1064,7 +1102,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                     fprintf(stderr, "could not get centroid\n");
                 }
 
-                if(style->label_width) {
+                if(style->label_width > 0) {
                     wrap_width = style->label_width/pxw*PANGO_SCALE;
                 } else {
                     OGR_G_GetEnvelope(geom, &envelope); 
@@ -1091,7 +1129,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                 fprintf(stderr, "could not get centroid\n");
             }
 
-            if(style->label_width) {
+            if(style->label_width > 0) {
                 wrap_width = style->label_width/pxw*PANGO_SCALE;
             } else {
                 OGR_G_GetEnvelope(geom, &envelope); 
@@ -1108,6 +1146,17 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pango_layout_set_wrap(plyo, PANGO_WRAP_WORD_CHAR);
             pango_layout_get_size(plyo, &lyow, &lyoh);
             pxy -= lyoh/PANGO_SCALE/2.0;
+            cairo_move_to(cr, pxx, pxy);
+            pango_cairo_layout_path(cr, plyo);
+            cairo_path_t *plyopath = cairo_copy_path_flat(cr);
+            if(style->label_halo_fill <= 0xffffff) {
+                make_label_halo(cr, plyopath, style);
+            }
+            cairo_set_source_rgba(cr,
+                vfr_color_compextr(style->label_fill, 'r'),
+                vfr_color_compextr(style->label_fill, 'g'),
+                vfr_color_compextr(style->label_fill, 'b'),
+                ((float)style->label_opacity)/100.0);
             cairo_move_to(cr, pxx, pxy);
             pango_cairo_show_layout(cr, plyo);
             break;
@@ -1393,6 +1442,9 @@ cairo_pattern_t* make_fill_pattern(vfr_style_t* style) {
             vfr_color_compextr(style->fill, 'g'), 
             vfr_color_compextr(style->fill, 'b'),
             ((float)style->fill_opacity)/100.0);
+    if(!strcmp(style->hatch_pattern, VFRHATCH_DOT_S)) {
+        cairo_fill_preserve(cr2);
+    }
     cairo_set_line_width(cr2, 1);
     cairo_set_line_cap(cr2, CAIRO_LINE_CAP_SQUARE);
     cairo_stroke(cr2);
@@ -1404,4 +1456,170 @@ cairo_pattern_t* make_fill_pattern(vfr_style_t* style) {
     cairo_pattern_set_matrix(hatchpat, &pmatrix);
     cairo_pattern_set_extend(hatchpat, CAIRO_EXTEND_REPEAT);
     return hatchpat;
+}
+
+/*int spline_knots(int knotsnum, double *tx, double *ty, double *cpx, double *cpy) {
+
+    // modelled on https://www.particleincell.com/wp-content/uploads/2012/06/bezier-spline.js
+    int n = knotsnum-1;
+
+    double *K;
+    double *Ks[2];
+    Ks[0] = tx;
+    Ks[1] = ty;
+
+    double *CP;
+    double *CPs[2];
+    CPs[0] = cpx;
+    CPs[1] = cpy;
+    
+    double *data = malloc(6*n*sizeof(double));
+    double *p1 = data;
+    double *p2 = &data[n];
+    double *a = &data[2*n];
+    double *b = &data[3*n];
+    double *c = &data[4*n];
+    double *r = &data[5*n];
+
+    double m;
+
+    int i, ki, cpnum;
+
+    cpnum = 0;
+
+    for(ki=0; ki<2; ki++) {
+        K = Ks[ki];
+
+        a[0] = 0.0;
+        b[0] = 2.0;
+        c[0] = 1.0;
+        r[0] = K[0]+2.0*K[1];
+
+        for(i=1; i<n-1; i++) {
+            a[i] = 1.0;
+            b[i] = 4.0;
+            c[i] = 1.0;
+            r[i] = 4 * K[i] + 2.0 * K[i+1];
+        }
+
+        a[n-1] = 2;
+        b[n-1] = 7;
+        c[n-1] = 0;
+        r[n-1] = 8*K[n-1]+K[n];
+
+        // solves AX=b w/ Thomas Algorithm
+        for(i=1; i < n; i++) {
+            m = a[i]/b[i-1];
+            b[i] = b[i] - m * c[i-1];
+            r[i] = r[i] - m * r[i-1];
+        }
+
+        p1[n-1] = r[n-1]/b[i-1];
+        for(i=n-2; i >= 0; --i) {
+            p1[i] = (r[i] - c[i] * p1[i+1]) / b[i];
+        }
+        // compute p2 uing p1
+        for(i=0; i<n-1; i++) {
+            p2[i] = 2 * K[n] - p1[i+1];
+        }
+
+        p2[n-1] = 0.5*(K[n] + p1[n-1]);
+        CP = CPs[ki];
+        for(i=0; i<n; i++) {
+            CP[i*2] = p1[i];
+            CP[i*2+1] = p2[i];
+            cpnum += 2;
+        }
+    }
+    free(data);
+
+    return cpnum/2;
+}*/
+
+
+void point_on_bezier(
+                    double x0, double y0,
+                    double x1, double y1, 
+                    double x2, double y2,
+                    double x3, double y3,
+                    double t, 
+                    double *Bx, double *By)
+{
+    *Bx = (pow(1.0-t, 3.0)*x0) + (3*pow(1.0-t, 2.0)*t*x1) + 
+        (3*(1-t)*pow(t, 2.0)*x2) + (pow(t, 3.0)*x3);
+    *By = (pow(1.0-t, 3.0)*y0) + (3*pow(1.0-t, 2.0)*t*y1) + 
+        (3*(1-t)*pow(t, 2.0)*y2) + (pow(t, 3.0)*y3);
+    return;
+}
+
+OGRGeometryH path_convex_hull(cairo_path_t *path) {
+    int i;
+    double x, y, p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y;
+    double bx, by;
+    cairo_path_data_t *pdat;
+
+    OGRGeometryH pgeom = OGR_G_CreateGeometry(wkbLineString);
+    OGRGeometryH hgeom;
+
+    for(i=0; i<path->num_data; i+=path->data[i].header.length) {
+        pdat = &path->data[i];
+        switch(pdat->header.type) {
+            case CAIRO_PATH_MOVE_TO:
+                break;
+            case CAIRO_PATH_LINE_TO:
+                x = pdat[1].point.x;
+                y = pdat[1].point.y;
+                OGR_G_AddPoint_2D(pgeom, x, y);
+                break;
+            case CAIRO_PATH_CURVE_TO:
+                p0x = x;
+                p0y = y;
+                p1x = pdat[1].point.x;
+                p1y = pdat[1].point.y;
+                p2x = pdat[2].point.x;
+                p2y = pdat[2].point.y;
+                p3x = pdat[3].point.x;
+                p3y = pdat[3].point.y;
+                point_on_bezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, 0.5, &bx, &by);
+                OGR_G_AddPoint_2D(pgeom, bx, by);
+                x = p3x;
+                y = p3y;
+                OGR_G_AddPoint_2D(pgeom, x, y);
+                break;
+            case CAIRO_PATH_CLOSE_PATH:
+            default:
+                break;
+        }
+    }
+    hgeom = OGR_G_ConvexHull(pgeom);
+    OGR_G_DestroyGeometry(pgeom);
+    return hgeom;
+}
+
+void make_label_halo(cairo_t *cr, cairo_path_t *plyopath, vfr_style_t *style) {
+        int i, hullptnum;
+        double x, y;
+        OGRGeometryH hullgeom = path_convex_hull(plyopath);
+        OGRGeometryH hullext = OGR_G_GetGeometryRef(hullgeom, 0);
+        hullptnum = OGR_G_GetPointCount(hullext);
+        cairo_new_path(cr);
+        x = OGR_G_GetX(hullext, 0);
+        y = OGR_G_GetY(hullext, 0);
+        cairo_move_to(cr, x, y);
+        for(i=1; i<hullptnum; i++) {
+            x = OGR_G_GetX(hullext, i);
+            y = OGR_G_GetY(hullext, i);
+            cairo_line_to(cr, x, y);
+        }
+        cairo_close_path(cr);
+        cairo_set_source_rgba(cr,
+            vfr_color_compextr(style->label_halo_fill, 'r'),
+            vfr_color_compextr(style->label_halo_fill, 'g'),
+            vfr_color_compextr(style->label_halo_fill, 'b'),
+            ((float)style->label_opacity)/100.0);
+        cairo_fill_preserve(cr);
+        cairo_set_line_width(cr, style->label_halo_size);
+        cairo_stroke(cr);
+        OGR_G_DestroyGeometry(hullgeom);
+        return;
 }

@@ -1,3 +1,5 @@
+![Example](https://raw.github.com/runderwood/vfr/master/out/hatchandhalo.png)
+
 ## About
 This program renders shapefiles (and other OGR-compatible datasources) as vector graphics (SVG). Features
 can be styled programmatically using Lua. I've used it as a tool for quickly generating simple 
@@ -105,7 +107,10 @@ For now, `vfr` outputs SVG, which can be rasterized by programs like [`rsvg-conv
 
 ## Examples
 
-### Patterned fill (detail of U.S. Census Bureau state geographies w/ dotted fill)
+### Label Halos
+![Label halos](https://raw.github.com/runderwood/vfr/master/out/hatchandhalo.png)
+
+### Patterned Fill (detail of U.S. Census Bureau state geographies w/ dotted fill)
 ![Pattern fill](https://raw.github.com/runderwood/vfr/master/out/hatchexample.png)
 
 ### Dot-density Map (of Nebraska Cattle Pop.)
