@@ -84,8 +84,8 @@ typedef struct vfr_style_s {
     char *label_text;
     char *label_fontdesc;
     uint32_t label_flags;
-    double label_xoff;
-    double label_yoff;
+    double label_xoffset;
+    double label_yoffset;
     double label_halo_size;
     uint64_t label_halo_fill;
     double label_rotate;
@@ -438,8 +438,11 @@ static int implrender(const char *datpath, int iw, int ih,
         layer = OGR_DS_GetLayer(src, i);
         lfcount = OGR_L_GetFeatureCount(layer, 0);
         fprintf(stderr, "layer \"%s\": %d feature(s)\n", OGR_L_GetName(layer), lfcount);
-        for(j=0; j<lfcount; j++) {
-            ftr = OGR_L_GetFeature(layer, j);
+        OGR_L_ResetReading(layer);
+        j = 0;
+        while(1) {
+            ftr = OGR_L_GetNextFeature(layer);
+            if(!ftr) break;
             geom = OGR_F_GetGeometryRef(ftr);
             if(geom == NULL) {
                 fprintf(stderr, "skipping null geometry w/ fid = %ld\n", 
@@ -460,6 +463,7 @@ static int implrender(const char *datpath, int iw, int ih,
             vfr_draw_geom(cr, ftr, geom, &ext, pxw, pxh, style);
             vfr_draw_label(lcr, ftr, geom, &ext, pxw, pxh, style);
             OGR_F_Destroy(ftr);
+            j++;
         }
     }
     fprintf(stderr, "painting labels over shapes...\n");
@@ -503,6 +507,7 @@ static int eval_feature_style(lua_State *L, OGRFeatureH ftr, vfr_style_t *style)
                 lua_pushstring(L, OGR_F_GetFieldAsString(ftr, i));
                 break;
             case OFTInteger:
+            case OFTInteger64:
             case OFTReal:
                 lua_pushnumber(L, OGR_F_GetFieldAsDouble(ftr, i));
                 break;
@@ -724,6 +729,34 @@ static int synch_style_table(lua_State *L, vfr_style_t *style) {
         } else if(style->label_opacity > 100) {
             style->label_opacity = 100;
         }
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_width");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_width = (int)lua_tonumber(L, -1);
+        if(style->label_width < 0) {
+            style->label_opacity = 0;
+        }
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_xoffset");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_xoffset = (int)lua_tonumber(L, -1);
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_yoffset");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_yoffset = (int)lua_tonumber(L, -1);
+    }
+    lua_pop(L, 1);
+    lua_pushstring(L, "label_rotate");
+    lua_gettable(L, -2);
+    if(lua_isnumber(L, -1)) {
+        style->label_rotate = (int)lua_tonumber(L, -1);
+        style->label_rotate = fmod(style->label_rotate, 360.0);
     }
     lua_pop(L, 1);
     lua_pushstring(L, "fill_pattern");
@@ -997,7 +1030,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
     int i, pcount, fieldidx;
     OGRGeometryH centroid;
     OGREnvelope envelope;
-    cairo_path_t *ftrpath, *lblpath, *lyopath;
+    cairo_path_t *ftrpath, *lblpath, *plyopath;
     PangoLayoutLine *line;
     double x, y, z, pxx, pxy, wrap_width;
     int lyow, lyoh;
@@ -1038,6 +1071,17 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pxx = (x - ext->MinX)/pxw;
             pxx += style->size/2.0;
             pxy = (ext->MaxY - y)/pxh;
+            pango_cairo_layout_path(cr, plyo);
+            plyopath = cairo_copy_path_flat(cr);
+            if(style->label_halo_fill <= 0xffffff) {
+                make_label_halo(cr, plyopath, style);
+            }
+            cairo_path_destroy(plyopath);
+            cairo_set_source_rgba(cr,
+                vfr_color_compextr(style->label_fill, 'r'),
+                vfr_color_compextr(style->label_fill, 'g'),
+                vfr_color_compextr(style->label_fill, 'b'),
+                ((float)style->label_opacity)/100.0);
             cairo_move_to(cr, pxx, pxy);
             pango_cairo_show_layout(cr, plyo);
             break;
@@ -1089,14 +1133,21 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                 cairo_move_to(cr, pxx, pxy);
                 cairo_new_path(cr);
                 pango_cairo_layout_line_path(cr, line);
-                lyopath = cairo_copy_path_flat(cr);
+                plyopath = cairo_copy_path_flat(cr);
                 cairo_new_path(cr);
                 // put layout points on path
-                transform_label_points(lyopath, &paramd_lblpath);
-                cairo_append_path(cr, lyopath);
-                cairo_path_destroy(lyopath);
-                lyopath = NULL;
-                cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 1.0);
+                transform_label_points(plyopath, &paramd_lblpath);
+                if(style->label_halo_fill <= 0xffffff) {
+                    make_label_halo(cr, plyopath, style);
+                }
+                cairo_set_source_rgba(cr,
+                    vfr_color_compextr(style->label_fill, 'r'),
+                    vfr_color_compextr(style->label_fill, 'g'),
+                    vfr_color_compextr(style->label_fill, 'b'),
+                    ((float)style->label_opacity)/100.0);
+                cairo_append_path(cr, plyopath);
+                cairo_path_destroy(plyopath);
+                plyopath = NULL;
                 cairo_fill(cr);
             } else {
                 centroid = OGR_G_CreateGeometry(wkbPoint);
@@ -1121,6 +1172,20 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                 pango_layout_get_size(plyo, &lyow, &lyoh);
                 pxy -= lyoh/PANGO_SCALE/2.0;
                 cairo_move_to(cr, pxx, pxy);
+                pango_cairo_layout_path(cr, plyo);
+                plyopath = cairo_copy_path_flat(cr);
+                if(style->label_halo_fill <= 0xffffff) {
+                    make_label_halo(cr, plyopath, style);
+                }
+                cairo_set_source_rgba(cr,
+                    vfr_color_compextr(style->label_fill, 'r'),
+                    vfr_color_compextr(style->label_fill, 'g'),
+                    vfr_color_compextr(style->label_fill, 'b'),
+                    ((float)style->label_opacity)/100.0);
+                cairo_path_destroy(plyopath);
+                pxx += style->label_xoffset;
+                pxy += style->label_yoffset;
+                cairo_move_to(cr, pxx, pxy);
                 pango_cairo_show_layout(cr, plyo);
             }
             break;
@@ -1142,6 +1207,8 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pxx = (x - ext->MinX)/pxw;
             pxx -= (wrap_width/PANGO_SCALE)/2.0;
             pxy = (ext->MaxY - y)/pxh;
+            pxx += style->label_xoffset;
+            pxy += style->label_yoffset;
 
             pango_layout_set_alignment(plyo, PANGO_ALIGN_CENTER);
             pango_layout_set_width(plyo, wrap_width);
@@ -1150,7 +1217,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
             pxy -= lyoh/PANGO_SCALE/2.0;
             cairo_move_to(cr, pxx, pxy);
             pango_cairo_layout_path(cr, plyo);
-            cairo_path_t *plyopath = cairo_copy_path_flat(cr);
+            plyopath = cairo_copy_path_flat(cr);
             if(style->label_halo_fill <= 0xffffff) {
                 make_label_halo(cr, plyopath, style);
             }
@@ -1159,6 +1226,7 @@ static int vfr_draw_label(cairo_t *cr, OGRFeatureH ftr, OGRGeometryH geom,
                 vfr_color_compextr(style->label_fill, 'g'),
                 vfr_color_compextr(style->label_fill, 'b'),
                 ((float)style->label_opacity)/100.0);
+            cairo_path_destroy(plyopath);
             cairo_move_to(cr, pxx, pxy);
             pango_cairo_show_layout(cr, plyo);
             break;
