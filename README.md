@@ -72,6 +72,7 @@ function vfrFeatureStyle(ftr)
         fstyle.stroke_opacity = 50
         fstyle.size = 1
         fstyle.label_fill = { r=127, g=127, b=127 }
+        fstyle.label_pattern = "dots"
         fstyle.label_place = 1
         fstyle.label_text = ftr.NAME:gsub("(%s+Public Schools)", ""):gsub("(%s+Community Schools)", ""):gsub("(%s+Schools)", "")
         fstyle.label_fill = { r=32, g=32, b=32 }
@@ -106,6 +107,9 @@ For now, `vfr` outputs SVG, which can be rasterized by programs like [`rsvg-conv
 ...
 
 ## Examples
+
+### Top Ten Percent Most Rural Nebraska School Districts
+![Label halos, pattern fills, label offsets](https://raw.github.com/runderwood/vfr/master/out/rineb2-hicontrast.png)
 
 ### Label Halos
 ![Label halos](https://raw.github.com/runderwood/vfr/master/out/hatchandhalo.png)
